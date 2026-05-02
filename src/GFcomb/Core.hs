@@ -76,7 +76,7 @@ gfFromList xs = GF (xs ++ repeat 0)
 -- Multiplication: The coefficient of x^n in the product A * B is given by the convolution of the coefficients:
 -- (A * B)[n] = sum_{i=0}^n a_i * b_{n-i}
 gfMul :: GF -> GF -> GF
-gfMul (GF as) (GF bs) = GF [convolution n as bs | n <- [0..]]
+gfMul (GF as) (GF bs) = GF [convolution n (as ++ repeat 0) (bs ++ repeat 0) | n <- [0..]]
   where
     convolution :: Int -> [Rational] -> [Rational] -> Rational
     convolution n as bs = sum [as !! i * bs !! (n - i) | i <- [0..n]]
@@ -89,5 +89,5 @@ gfMul (GF as) (GF bs) = GF [convolution n as bs | n <- [0..]]
 -- 
 -- In general: A'[n] = (n+1) * a_{n+1}
 gfDerivative :: GF -> GF
+gfDerivative (GF []) = GF []
 gfDerivative (GF (_ : coeffs)) = GF [fromIntegral (n + 1) * coeffs !! n | n <- [0..]]
-gfDeriv (GF []) = GF []
