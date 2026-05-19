@@ -1,2 +1,2 @@
-# haskell-practice
-Repsoitory to practice Haskell and work on my ISP
+# Individual Software Porject: GFComb
+A Haskell Library and REPL for Combinatorial Generating Functions
