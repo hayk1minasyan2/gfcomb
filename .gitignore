@@ -1,0 +1,21 @@
+# Cabal build artifacts
+dist-newstyle/
+dist/
+*.hi
+*.o
+*.chi
+*.chs.h
+*.dyn_o
+*.dyn_hi
+
+# Cabal generated files
+cabal.project.local
+cabal.project.local~
+.ghc.environment.*
+
+# Other
+*.swp
+*.swo
+*~
+.DS_Store
+test.txt
