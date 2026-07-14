@@ -2,32 +2,22 @@ module Main (main) where
 
 import Control.Monad (unless)
 import GFComb.Core
+import GFComb.Polynomial
 import System.Exit (exitFailure)
 
 main :: IO ()
 main = do
-  putStrLn "Running GFComb core tests..."
+  putStrLn "Running GFComb tests..."
 
-  putStrLn "Construction..."
   testConstruction
-
-  putStrLn "Addition..."
   testAddition
-
-  putStrLn "Multiplication..."
   testMultiplication
-
-  putStrLn "Derivative..."
   testDerivative
-
-  putStrLn "Integral..."
   testIntegral
-
-  putStrLn "Division..."
   testDivision
-
-  putStrLn "Composition..."
   testComposition
+
+  testPolynomial
 
   putStrLn "All tests passed."
 
@@ -109,3 +99,67 @@ testComposition = do
         "composition"
         [2, 3, 7, 8, 4, 0]
         (gfTake 6 result)
+
+
+testPolynomial :: IO ()
+testPolynomial = do
+  let x = polynomialVariable
+
+  assertEqual
+    "polynomial construction"
+    [1, 2, 3]
+    (polynomialCoefficients (polynomialFromList [1, 2, 3]))
+
+  assertEqual
+    "polynomial normalization"
+    [1, 2, 3]
+    (polynomialCoefficients (polynomialFromList [1, 2, 3, 0, 0]))
+
+  assertEqual
+    "polynomial addition"
+    [4, 6, 3]
+    ( polynomialCoefficients $
+        polynomialFromList [1, 2, 3]
+          + polynomialFromList [3, 4]
+    )
+
+  assertEqual
+    "polynomial subtraction"
+    [0, 0, 3]
+    ( polynomialCoefficients $
+        polynomialFromList [1, 2, 3]
+          - polynomialFromList [1, 2]
+    )
+
+  assertEqual
+    "polynomial multiplication"
+    [3, 10, 8]
+    ( polynomialCoefficients $
+        polynomialFromList [1, 2]
+          * polynomialFromList [3, 4]
+    )
+
+  assertEqual
+    "polynomial power"
+    [1, 3, 3, 1]
+    (polynomialCoefficients ((x + 1) ^ (3 :: Int)))
+
+  assertEqual
+    "polynomial evaluation"
+    17
+    (polynomialEvaluate (polynomialFromList [1, 2, 3]) 2)
+
+  assertEqual
+    "polynomial degree"
+    (Just 2)
+    (polynomialDegree (polynomialFromList [1, 2, 3]))
+
+  assertEqual
+    "zero polynomial degree"
+    Nothing
+    (polynomialDegree polynomialZero)
+
+  assertEqual
+    "polynomial show"
+    "1 + 2x + 3x^2"
+    (show (polynomialFromList [1, 2, 3]))

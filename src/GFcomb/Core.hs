@@ -1,4 +1,5 @@
 
+
 module GFComb.Core
   ( -- Generating functions
     GF,
@@ -261,7 +262,7 @@ gfComposeUnsafe (GF outerCoefficients) inner = GF [ coefficientAt degree | degre
     coefficientAt :: Int -> Rational
     coefficientAt degree = 
       sum  [ outerCoefficients !! power * gfCoeffAt (powersOfInner !! power) degree | power <- [0 .. degree] ]
-      
+
 --------------------
 -- Comparison
 --------------------
