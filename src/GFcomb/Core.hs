@@ -253,10 +253,15 @@ gfCompose outer inner
     innerConstant = gfConstantTerm inner
 
 gfComposeUnsafe :: GF -> GF -> GF
-gfComposeUnsafe (GF []) _ = error "GF invariant violated: finite coefficient list"
-gfComposeUnsafe (GF (constant : remainingCoefficients)) inner =
-  gfConstant constant + inner * gfComposeUnsafe (GF remainingCoefficients) inner
+gfComposeUnsafe (GF outerCoefficients) inner = GF [ coefficientAt degree | degree <- [0 ..]]
+  where
+    powersOfInner :: [GF]
+    powersOfInner = iterate (`gfMul` inner) gfOne
 
+    coefficientAt :: Int -> Rational
+    coefficientAt degree = 
+      sum  [ outerCoefficients !! power * gfCoeffAt (powersOfInner !! power) degree | power <- [0 .. degree] ]
+      
 --------------------
 -- Comparison
 --------------------
