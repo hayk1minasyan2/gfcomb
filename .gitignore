@@ -1,12 +1,14 @@
 # Cabal build artifacts
 dist-newstyle/
 dist/
+
 *.hi
 *.o
 *.chi
 *.chs.h
 *.dyn_o
 *.dyn_hi
+*.prof
 
 # Cabal generated files
 cabal.project.local
@@ -17,5 +19,18 @@ cabal.project.local~
 *.swp
 *.swo
 *~
+*.tmp
+*.bak
 .DS_Store
-test.txt
+
+# HPC test coverage
+.hpc/
+*.tix
+
+# Haskell Language Server
+.hie/
+.hls/
+
+# IDE files
+.vscode/
+.idea/
