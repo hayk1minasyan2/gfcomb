@@ -82,6 +82,18 @@ library
     -- Base language which the package is written in.
     default-language: Haskell2010
 
+executable gfcomb
+    import:           warnings
+
+    main-is:          REPL.hs
+    hs-source-dirs:   app
+
+    build-depends:
+        base ^>=4.18.3.0,
+        gfcomb
+
+    default-language: Haskell2010
+    
 test-suite gfcomb-test
     -- Import common warning flags.
     import:           warnings
