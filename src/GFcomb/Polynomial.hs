@@ -116,8 +116,7 @@ polynomialVariable = Polynomial [0, 1]
 --
 -- The coefficients are returned in ascending order of degree.
 polynomialCoefficients :: Polynomial -> [Rational]
-polynomialCoefficients (Polynomial coefficients) =
-  coefficients
+polynomialCoefficients (Polynomial coefficients) = coefficients
 
 -- Return the degree of a polynomial.
 --
@@ -129,19 +128,15 @@ polynomialCoefficients (Polynomial coefficients) =
 -- polynomialDegree polynomialZero                  == Nothing
 -- 
 polynomialDegree :: Polynomial -> Maybe Int
-polynomialDegree (Polynomial []) =
-  Nothing
-polynomialDegree (Polynomial coefficients) =
-  Just (length coefficients - 1)
+polynomialDegree (Polynomial []) = Nothing
+polynomialDegree (Polynomial coefficients) = Just (length coefficients - 1)
 
 -- Return the leading coefficient.
 --
 -- The zero polynomial has no leading coefficient.
 polynomialLeadingCoefficient :: Polynomial -> Maybe Rational
-polynomialLeadingCoefficient (Polynomial []) =
-  Nothing
-polynomialLeadingCoefficient (Polynomial coefficients) =
-  Just (last coefficients)
+polynomialLeadingCoefficient (Polynomial []) = Nothing
+polynomialLeadingCoefficient (Polynomial coefficients) = Just (last coefficients)
 
 
 polynomialConstantTerm :: Polynomial -> Rational
@@ -151,8 +146,7 @@ polynomialConstantTerm (Polynomial (constant : _)) = constant
 
 -- Test whether a polynomial is the zero polynomial.
 polynomialIsZero :: Polynomial -> Bool
-polynomialIsZero (Polynomial coefficients) =
-  null coefficients
+polynomialIsZero (Polynomial coefficients) = null coefficients
 
 ----------------------
 -- Arithmetic
@@ -163,21 +157,18 @@ polynomialAdd :: Polynomial -> Polynomial -> Polynomial
 polynomialAdd
   (Polynomial coefficientsA)
   (Polynomial coefficientsB) =
-    polynomialFromList
-      (zipWithLonger (+) coefficientsA coefficientsB)
+    polynomialFromList (zipWithLonger (+) coefficientsA coefficientsB)
 
 -- Subtract one polynomial from another coefficient by coefficient.
 polynomialSub :: Polynomial -> Polynomial -> Polynomial
 polynomialSub
   (Polynomial coefficientsA)
   (Polynomial coefficientsB) =
-    polynomialFromList
-      (zipWithLonger (-) coefficientsA coefficientsB)
+    polynomialFromList (zipWithLonger (-) coefficientsA coefficientsB)
 
 -- Negate every coefficient.
 polynomialNegate :: Polynomial -> Polynomial
-polynomialNegate (Polynomial coefficients) =
-  Polynomial (map negate coefficients)
+polynomialNegate (Polynomial coefficients) = Polynomial (map negate coefficients)
 
 -- Multiply every coefficient by a rational scalar.
 polynomialScale :: Rational -> Polynomial -> Polynomial
@@ -220,7 +211,7 @@ polynomialPow polynomial power
   | even power =
       let halfPower =
             polynomialPow polynomial (power `div` 2)
-       in halfPower * halfPower
+      in halfPower * halfPower
   | otherwise =
       polynomial * polynomialPow polynomial (power - 1)
 
@@ -234,10 +225,7 @@ polynomialPow polynomial power
 
 polynomialEvaluate :: Polynomial -> Rational -> Rational
 polynomialEvaluate (Polynomial coefficients) value =
-    foldr
-      (\coefficient accumulated -> coefficient + value * accumulated)
-      0
-      coefficients
+    foldr (\coefficient accumulated -> coefficient + value * accumulated) 0 coefficients
 
 ---------------------
 -- Helpers

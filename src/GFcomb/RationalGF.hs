@@ -1,19 +1,18 @@
 module GFComb.RationalGF
-  ( RationalGF,
-    RationalGFError (..),
+    ( RationalGF,
+      RationalGFError (..),
 
-    -- Construction
-    rationalGF,
+      -- Construction
+      rationalGF,
 
-    -- Inspection
-    rationalGFNumerator,
-    rationalGFDenominator,
+      rationalGFNumerator,
+      rationalGFDenominator,
 
-    -- Conversion
-    rationalGFToGF
+      -- Conversion
+      rationalGFToGF
 
-  )
-    where
+    )
+      where
 
 import GFComb.Polynomial ( Polynomial, polynomialConstantTerm, polynomialOne, polynomialDegree)
 import GFComb.Conversion (polynomialToGF)
@@ -43,16 +42,16 @@ instance Show RationalGF where
 -- The denominator must have a non-zero constant term. This guarantees that
 -- the quotient has a unique expansion as a formal power series.
 
-data RationalGF = RationalGF Polynomial Polynomial
-  deriving (Eq)
+data RationalGF = RationalGF {  rationalGFNumerator :: Polynomial, 
+                                rationalGFDenominator :: Polynomial }
+    deriving (Eq)
 
 ----------------------
 -- Errors
 ----------------------
 
-data RationalGFError
-  = DenominatorHasZeroConstantTerm
-  deriving (Eq, Show)
+data RationalGFError = DenominatorHasZeroConstantTerm
+    deriving (Eq, Show)
 
 ----------------------------
 -- Construction
@@ -62,22 +61,8 @@ data RationalGFError
 -- The denominator must have a non-zero constant coefficient.
 rationalGF :: Polynomial -> Polynomial -> Either RationalGFError RationalGF
 rationalGF numerator denominator
-  | polynomialConstantTerm denominator == 0 =
-      Left DenominatorHasZeroConstantTerm
-  | otherwise =
-      Right (RationalGF numerator denominator)
-
--------------------------------------
--- Inspection
--------------------------------------
-
-rationalGFNumerator :: RationalGF -> Polynomial
-rationalGFNumerator (RationalGF numerator _) =
-  numerator
-
-rationalGFDenominator :: RationalGF -> Polynomial
-rationalGFDenominator (RationalGF _ denominator) =
-  denominator
+  | polynomialConstantTerm denominator == 0 = Left DenominatorHasZeroConstantTerm
+  | otherwise = Right (RationalGF numerator denominator)
 
 
 --------------------------------

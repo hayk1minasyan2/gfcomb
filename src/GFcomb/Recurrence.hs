@@ -1,27 +1,27 @@
 module GFComb.Recurrence
-  ( -- Types
-    LinearRecurrence,
-    RecurrenceError (..),
+    ( -- Types
+        LinearRecurrence,
+        RecurrenceError (..),
 
-    -- Construction
-    linearRecurrence,
+        -- Construction
+        linearRecurrence,
 
-    -- Inspection
-    recurrenceOrder,
-    recurrenceCoefficients,
-    recurrenceInitialValues,
+        -- Inspection
+        recurrenceOrder,
+        recurrenceCoefficients,
+        recurrenceInitialValues,
 
-    -- Generating-function construction
-    recurrenceNumerator,
-    recurrenceDenominator,
-    recurrenceRationalGF,
-    recurrenceGF,
+        -- Generating-function construction
+        recurrenceNumerator,
+        recurrenceDenominator,
+        recurrenceRationalGF,
+        recurrenceGF,
 
-    -- Terms
-    recurrenceTerms,
-    recurrenceTermAt
-  )
-    where
+        -- Terms
+        recurrenceTerms,
+        recurrenceTermAt
+    )
+        where
 
 import GFComb.Core ( GF, gfCoeffAtMaybe, gfTake)
 import GFComb.Polynomial ( Polynomial, polynomialFromList)
@@ -47,12 +47,11 @@ import GFComb.RationalGF ( RationalGF, rationalGF, rationalGFToGF)
 --
 -- The constructor is hidden from users of the module. Valid recurrence values
 -- must be created with 'linearRecurrence'.
-data LinearRecurrence =
-  LinearRecurrence
+data LinearRecurrence = LinearRecurrence
     { recurrenceCoefficients :: [Rational],
       recurrenceInitialValues :: [Rational]
     }
-  deriving (Eq, Show)
+    deriving (Eq, Show)
 
 -------------------
 -- Errors
@@ -60,10 +59,10 @@ data LinearRecurrence =
 
 -- Errors that may occur while constructing a linear recurrence.
 data RecurrenceError = EmptyRecurrenceCoefficients | InitialValueCountMismatch
-      { expectedInitialValueCount :: Int,
-        actualInitialValueCount :: Int
-      }
-  deriving (Eq, Show)
+        { expectedInitialValueCount :: Int,
+            actualInitialValueCount :: Int
+        }
+    deriving (Eq, Show)
 
 --------------------------
 -- Construction
@@ -84,18 +83,18 @@ data RecurrenceError = EmptyRecurrenceCoefficients | InitialValueCountMismatch
 
 linearRecurrence :: [Rational] -> [Rational] -> Either RecurrenceError LinearRecurrence
 linearRecurrence coefficients initialValues
-  | null coefficients = Left EmptyRecurrenceCoefficients
-  | actualCount /= expectedCount = Left InitialValueCountMismatch
-          { expectedInitialValueCount = expectedCount,
-            actualInitialValueCount = actualCount
-          }
-  | otherwise = Right LinearRecurrence
-          { recurrenceCoefficients = coefficients,
-            recurrenceInitialValues = initialValues
-          }
-  where
-    expectedCount = length coefficients
-    actualCount = length initialValues
+    | null coefficients = Left EmptyRecurrenceCoefficients
+    | actualCount /= expectedCount = Left InitialValueCountMismatch
+            { expectedInitialValueCount = expectedCount,
+                actualInitialValueCount = actualCount
+            }
+    | otherwise = Right LinearRecurrence
+            { recurrenceCoefficients = coefficients,
+                recurrenceInitialValues = initialValues
+            }
+    where
+        expectedCount = length coefficients
+        actualCount = length initialValues
 
 -------------------
 -- Inspection
@@ -103,8 +102,7 @@ linearRecurrence coefficients initialValues
 
 -- Return the order of the recurrence.
 recurrenceOrder :: LinearRecurrence -> Int
-recurrenceOrder recurrence =
-  length (recurrenceCoefficients recurrence)
+recurrenceOrder recurrence = length (recurrenceCoefficients recurrence)
 
 ----------------------------------------
 -- Generating-function construction
@@ -122,9 +120,9 @@ recurrenceOrder recurrence =
 -- 
 recurrenceDenominator :: LinearRecurrence -> Polynomial
 recurrenceDenominator recurrence =
-  polynomialFromList (1 : map negate coefficients)
-  where
-    coefficients = recurrenceCoefficients recurrence
+    polynomialFromList (1 : map negate coefficients)
+    where
+        coefficients = recurrenceCoefficients recurrence
 
 -- Construct the numerator of the recurrence generating function.
 --
@@ -141,27 +139,27 @@ recurrenceDenominator recurrence =
 -- 
 recurrenceNumerator :: LinearRecurrence -> Polynomial
 recurrenceNumerator recurrence =
-  polynomialFromList [ numeratorCoefficient degree | degree <- [0 .. order - 1]]
-  where
-    coefficients = recurrenceCoefficients recurrence
-    initialValues =  recurrenceInitialValues recurrence
-    order = recurrenceOrder recurrence
+    polynomialFromList [ numeratorCoefficient degree | degree <- [0 .. order - 1]]
+    where
+        coefficients = recurrenceCoefficients recurrence
+        initialValues =  recurrenceInitialValues recurrence
+        order = recurrenceOrder recurrence
 
-    numeratorCoefficient :: Int -> Rational
-    numeratorCoefficient degree =
-      initialValues !! degree - sum ( zipWith (*) (take degree coefficients) (reverse (take degree initialValues)))
+        numeratorCoefficient :: Int -> Rational
+        numeratorCoefficient degree =
+            initialValues !! degree - sum ( zipWith (*) (take degree coefficients) (reverse (take degree initialValues)))
 
 -- Construct the rational generating function associated with a recurrence.
 recurrenceRationalGF :: LinearRecurrence -> RationalGF
 recurrenceRationalGF recurrence =
-  case  rationalGF (recurrenceNumerator recurrence) (recurrenceDenominator recurrence)
-    of
-      Right result -> result
-      Left err ->  error
-          ( "LinearRecurrence invariant violated while constructing "
-              ++ "its rational generating function: "
-              ++ show err
-          )
+    case  rationalGF (recurrenceNumerator recurrence) (recurrenceDenominator recurrence)
+        of
+        Right result -> result
+        Left err ->  error
+            ( "LinearRecurrence invariant violated while constructing "
+                ++ "its rational generating function: "
+                ++ show err
+            )
 
 -- Expand the recurrence's rational generating function as an infinite
 -- formal power series.
