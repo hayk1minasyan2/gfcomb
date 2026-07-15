@@ -4,6 +4,7 @@ import Control.Monad (unless)
 import GFComb.Core
 import GFComb.Polynomial
 import GFComb.Conversion
+import GFComb.RationalGF
 import System.Exit (exitFailure)
 
 main :: IO ()
@@ -23,6 +24,10 @@ main = do
   testPolynomial
 
   testPolynomialConversion
+
+  testRationalGFConstruction
+
+  testRationalGFConversion
 
   putStrLn "All tests passed."
 
@@ -218,6 +223,16 @@ testPolynomial = do
     "1 + 2x + 3x^2"
     (show (polynomialFromList [1, 2, 3]))
 
+  assertEqual
+    "polynomial constant term"
+    1
+    (polynomialConstantTerm (polynomialFromList [1, 2, 3]))
+
+  assertEqual
+    "zero polynomial constant term"
+    0
+    (polynomialConstantTerm polynomialZero)
+
 
 testPolynomialConversion :: IO ()
 testPolynomialConversion =
@@ -227,3 +242,65 @@ testPolynomialConversion =
     ( gfTake 6 $
         polynomialToGF (polynomialFromList [1, 2, 3])
     )
+
+
+testRationalGFConstruction :: IO ()
+testRationalGFConstruction = do
+  let numerator = polynomialFromList [1, 1]
+      denominator = polynomialFromList [1, -1]
+
+  case rationalGF numerator denominator of
+    Left err -> do
+      putStrLn ("FAILED: valid rational generating function returned " ++ show err)
+      exitFailure
+
+    Right result -> do
+      assertEqual
+        "rational GF numerator"
+        numerator
+        (rationalGFNumerator result)
+
+      assertEqual
+        "rational GF denominator"
+        denominator
+        (rationalGFDenominator result)
+
+      assertEqual
+        "rational GF display"
+        "(1 + x) / (1 - x)"
+        (show result)
+
+  case rationalGF polynomialOne polynomialVariable of
+    Left DenominatorHasZeroConstantTerm ->
+      pure ()
+
+    Right _ -> do
+      putStrLn "FAILED: denominator with zero constant term was accepted"
+      exitFailure
+
+testRationalGFConversion :: IO ()
+testRationalGFConversion = do
+  let numerator = polynomialOne
+      denominator = polynomialFromList [1, -1]
+
+  case rationalGF numerator denominator of
+    Left err -> do
+      putStrLn ("FAILED: rational GF conversion setup returned " ++ show err)
+      exitFailure
+
+    Right result ->
+      assertEqual
+        "expand rational GF as a formal power series"
+        [1, 1, 1, 1, 1, 1]
+        (gfTake 6 (rationalGFToGF result))
+
+  case rationalGF denominator polynomialOne of
+    Left err -> do
+      putStrLn ("FAILED: polynomial rational GF returned " ++ show err)
+      exitFailure
+
+    Right result ->
+      assertEqual
+        "rational GF display with denominator one"
+        "1 - x"
+        (show result)

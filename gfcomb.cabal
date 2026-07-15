@@ -63,6 +63,7 @@ library
                 GFComb.Core
                 GFComb.Polynomial
                 GFComb.Conversion
+                GFComb.RationalGF
 
     -- Modules included in this library but not exported.
     -- other-modules:

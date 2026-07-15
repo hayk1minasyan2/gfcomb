@@ -9,6 +9,7 @@ module GFComb.Polynomial
 
     -- Inspection
     polynomialCoefficients,
+    polynomialConstantTerm,
     polynomialDegree,
     polynomialLeadingCoefficient,
     polynomialIsZero,
@@ -29,9 +30,9 @@ where
 import Data.Ratio (denominator, numerator)
 import Numeric.Natural (Natural)
 
---------------------------------------------------------------------------------
+---------------------
 -- Polynomial type
---------------------------------------------------------------------------------
+--------------------
 
 newtype Polynomial = Polynomial [Rational]
   deriving (Eq)
@@ -74,7 +75,7 @@ instance Show Polynomial where
         | denominator value == 1 = show (numerator value)
         | otherwise = "("++ show (numerator value) ++ "/" ++ show (denominator value) ++ ")"
 
--- | Arithmetic syntax for polynomials.
+-- Arithmetic syntax for polynomials.
 instance Num Polynomial where
   (+) = polynomialAdd
   (-) = polynomialSub
@@ -111,31 +112,29 @@ polynomialVariable = Polynomial [0, 1]
 -- Inspection
 --------------------------------------------------------------------------------
 
--- | Return the normalized finite coefficient list.
+-- Return the normalized finite coefficient list.
 --
 -- The coefficients are returned in ascending order of degree.
 polynomialCoefficients :: Polynomial -> [Rational]
 polynomialCoefficients (Polynomial coefficients) =
   coefficients
 
--- | Return the degree of a polynomial.
+-- Return the degree of a polynomial.
 --
 -- The zero polynomial has no mathematically defined degree, so this function
 -- returns 'Nothing' for zero.
 --
--- Examples:
---
--- @
+-- 
 -- polynomialDegree (polynomialFromList [1, 2, 3]) == Just 2
 -- polynomialDegree polynomialZero                  == Nothing
--- @
+-- 
 polynomialDegree :: Polynomial -> Maybe Int
 polynomialDegree (Polynomial []) =
   Nothing
 polynomialDegree (Polynomial coefficients) =
   Just (length coefficients - 1)
 
--- | Return the leading coefficient.
+-- Return the leading coefficient.
 --
 -- The zero polynomial has no leading coefficient.
 polynomialLeadingCoefficient :: Polynomial -> Maybe Rational
@@ -144,14 +143,20 @@ polynomialLeadingCoefficient (Polynomial []) =
 polynomialLeadingCoefficient (Polynomial coefficients) =
   Just (last coefficients)
 
--- | Test whether a polynomial is the zero polynomial.
+
+polynomialConstantTerm :: Polynomial -> Rational
+polynomialConstantTerm (Polynomial []) = 0
+polynomialConstantTerm (Polynomial (constant : _)) = constant
+
+
+-- Test whether a polynomial is the zero polynomial.
 polynomialIsZero :: Polynomial -> Bool
 polynomialIsZero (Polynomial coefficients) =
   null coefficients
 
---------------------------------------------------------------------------------
+----------------------
 -- Arithmetic
---------------------------------------------------------------------------------
+----------------------
 
 -- Add two polynomials coefficient by coefficient.
 polynomialAdd :: Polynomial -> Polynomial -> Polynomial
@@ -234,9 +239,9 @@ polynomialEvaluate (Polynomial coefficients) value =
       0
       coefficients
 
---------------------------------------------------------------------------------
--- Internal helpers
---------------------------------------------------------------------------------
+---------------------
+-- Helpers
+----------------------
 
 -- Remove trailing zeros from a coefficient list.
 --
