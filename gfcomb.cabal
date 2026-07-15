@@ -62,6 +62,7 @@ library
     exposed-modules: 
                 GFComb.Core
                 GFComb.Polynomial
+                GFComb.Conversion
 
     -- Modules included in this library but not exported.
     -- other-modules:

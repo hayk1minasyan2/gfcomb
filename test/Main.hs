@@ -3,6 +3,7 @@ module Main (main) where
 import Control.Monad (unless)
 import GFComb.Core
 import GFComb.Polynomial
+import GFComb.Conversion
 import System.Exit (exitFailure)
 
 main :: IO ()
@@ -16,8 +17,12 @@ main = do
   testIntegral
   testDivision
   testComposition
+  testErrors
+  testInfiniteMultiplication
 
   testPolynomial
+
+  testPolynomialConversion
 
   putStrLn "All tests passed."
 
@@ -100,6 +105,55 @@ testComposition = do
         [2, 3, 7, 8, 4, 0]
         (gfTake 6 result)
 
+testErrors :: IO ()
+testErrors = do
+  case gfDivide gfOne gfVariable of
+    Left DivisionByZeroConstant ->
+      pure ()
+
+    Left otherError -> do
+      putStrLn "FAILED: division by a series with zero constant term"
+      putStrLn "  Expected: DivisionByZeroConstant"
+      putStrLn ("  Actual:   " ++ show otherError)
+      exitFailure
+
+    Right result -> do
+      putStrLn "FAILED: division by a series with zero constant term"
+      putStrLn ("  Expected an error, but received: " ++ show result)
+      exitFailure
+
+  case gfCompose gfVariable (gfConstant 2) of
+    Left (CompositionRequiresZeroConstant constant)
+      | constant == 2 ->
+          pure ()
+
+    Left otherError -> do
+      putStrLn "FAILED: composition requires zero inner constant term"
+      putStrLn "  Expected: CompositionRequiresZeroConstant 2"
+      putStrLn ("  Actual:   " ++ show otherError)
+      exitFailure
+
+    Right result -> do
+      putStrLn "FAILED: composition requires zero inner constant term"
+      putStrLn ("  Expected an error, but received: " ++ show result)
+      exitFailure
+
+
+testInfiniteMultiplication :: IO ()
+testInfiniteMultiplication = do
+  let x = gfVariable
+
+  case gfReciprocal (gfOne - x) of
+    Left err -> do
+      putStrLn ("FAILED: infinite-series multiplication setup returned " ++ show err)
+      exitFailure
+
+    Right geometric ->
+      assertEqual
+        "multiplication of infinite geometric series"
+        [1, 2, 3, 4, 5, 6]
+        (gfTake 6 (geometric * geometric))
+
 
 testPolynomial :: IO ()
 testPolynomial = do
@@ -163,3 +217,13 @@ testPolynomial = do
     "polynomial show"
     "1 + 2x + 3x^2"
     (show (polynomialFromList [1, 2, 3]))
+
+
+testPolynomialConversion :: IO ()
+testPolynomialConversion =
+  assertEqual
+    "convert polynomial to generating function"
+    [1, 2, 3, 0, 0, 0]
+    ( gfTake 6 $
+        polynomialToGF (polynomialFromList [1, 2, 3])
+    )
