@@ -1,5 +1,4 @@
 
-
 module GFComb.Core
   ( -- Generating functions
     GF,

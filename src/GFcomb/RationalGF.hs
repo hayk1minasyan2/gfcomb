@@ -15,7 +15,7 @@ module GFComb.RationalGF
   )
     where
 
-import GFComb.Polynomial ( Polynomial, polynomialConstantTerm, polynomialOne )
+import GFComb.Polynomial ( Polynomial, polynomialConstantTerm, polynomialOne, polynomialDegree)
 import GFComb.Conversion (polynomialToGF)
 import GFComb.Core (GF, gfDivide)
 
@@ -23,7 +23,14 @@ import GFComb.Core (GF, gfDivide)
 instance Show RationalGF where
   show (RationalGF numerator denominator)
     | denominator == polynomialOne = show numerator
-    | otherwise = "(" ++ show numerator ++ ") / (" ++ show denominator ++ ")"
+    | otherwise = showNumerator numerator ++ " / (" ++ show denominator ++ ")"
+    where
+      showNumerator :: Polynomial -> String
+      showNumerator polynomial =
+        case polynomialDegree polynomial of
+          Nothing -> show polynomial
+          Just 0 ->  show polynomial
+          Just _ -> "(" ++ show polynomial ++ ")"
 
 ---------------------
 -- Rational generating functions

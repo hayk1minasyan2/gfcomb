@@ -5,6 +5,8 @@ import GFComb.Core
 import GFComb.Polynomial
 import GFComb.Conversion
 import GFComb.RationalGF
+import GFComb.Recurrence
+import GFComb.Builtins
 import System.Exit (exitFailure)
 
 main :: IO ()
@@ -28,6 +30,13 @@ main = do
   testRationalGFConstruction
 
   testRationalGFConversion
+
+  testRecurrenceValidation
+  testRecurrenceGeneratingFunction
+  testRecurrenceTerms
+  testThirdOrderRecurrence
+
+  testBuiltins
 
   putStrLn "All tests passed."
 
@@ -304,3 +313,160 @@ testRationalGFConversion = do
         "rational GF display with denominator one"
         "1 - x"
         (show result)
+
+testRecurrenceValidation :: IO ()
+testRecurrenceValidation = do
+  case linearRecurrence [] [] of
+    Left EmptyRecurrenceCoefficients ->
+      pure ()
+
+    Left otherError -> do
+      putStrLn "FAILED: empty recurrence coefficients"
+      putStrLn ("  Unexpected error: " ++ show otherError)
+      exitFailure
+
+    Right _ -> do
+      putStrLn "FAILED: empty recurrence coefficients were accepted"
+      exitFailure
+
+  case linearRecurrence [1, 1] [1] of
+    Left
+      InitialValueCountMismatch
+        { expectedInitialValueCount = 2,
+          actualInitialValueCount = 1} ->
+        pure ()
+
+    Left otherError -> do
+      putStrLn "FAILED: incorrect initial-value count"
+      putStrLn ("  Unexpected error: " ++ show otherError)
+      exitFailure
+
+    Right _ -> do
+      putStrLn "FAILED: incorrect initial-value count was accepted"
+      exitFailure
+
+
+testRecurrenceGeneratingFunction :: IO ()
+testRecurrenceGeneratingFunction =
+  case linearRecurrence [1, 1] [1, 2] of
+    Left err -> do
+      putStrLn ("FAILED: recurrence construction returned " ++ show err)
+      exitFailure
+
+    Right recurrence -> do
+      assertEqual
+        "recurrence order"
+        2
+        (recurrenceOrder recurrence)
+
+      assertEqual
+        "recurrence coefficients"
+        [1, 1]
+        (recurrenceCoefficients recurrence)
+
+      assertEqual
+        "recurrence initial values"
+        [1, 2]
+        (recurrenceInitialValues recurrence)
+
+      assertEqual
+        "recurrence numerator"
+        [1, 1]
+        (polynomialCoefficients (recurrenceNumerator recurrence))
+
+      assertEqual
+        "recurrence denominator"
+        [1, -1, -1]
+        (polynomialCoefficients (recurrenceDenominator recurrence))
+
+      assertEqual
+        "recurrence rational GF"
+        "(1 + x) / (1 - x - x^2)"
+        (show (recurrenceRationalGF recurrence))
+
+testRecurrenceTerms :: IO ()
+testRecurrenceTerms =
+  case linearRecurrence [1, 1] [1, 1] of
+    Left err -> do
+      putStrLn ("FAILED: Fibonacci recurrence returned " ++ show err)
+      exitFailure
+
+    Right recurrence -> do
+      assertEqual
+        "Fibonacci recurrence terms"
+        [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
+        (recurrenceTerms 10 recurrence)
+
+      assertEqual
+        "Fibonacci term at index 9"
+        (Just 55)
+        (recurrenceTermAt 9 recurrence)
+
+      assertEqual
+        "negative recurrence term index"
+        Nothing
+        (recurrenceTermAt (-1) recurrence)
+
+      assertEqual
+        "non-positive recurrence term count"
+        []
+        (recurrenceTerms 0 recurrence)
+
+testThirdOrderRecurrence :: IO ()
+testThirdOrderRecurrence =
+  case linearRecurrence [1, 1, 1] [0, 0, 1] of
+    Left err -> do
+      putStrLn ("FAILED: third-order recurrence returned " ++ show err)
+      exitFailure
+
+    Right recurrence -> do
+      assertEqual
+        "third-order recurrence numerator"
+        [0, 0, 1]
+        (polynomialCoefficients (recurrenceNumerator recurrence))
+
+      assertEqual
+        "third-order recurrence denominator"
+        [1, -1, -1, -1]
+        (polynomialCoefficients (recurrenceDenominator recurrence))
+
+      assertEqual
+        "third-order recurrence terms"
+        [0, 0, 1, 1, 2, 4, 7, 13]
+        (recurrenceTerms 8 recurrence)
+
+
+testBuiltins :: IO ()
+testBuiltins = do
+  assertEqual
+    "Fibonacci built-in name"
+    "fibonacci"
+    (builtinName fibonacci)
+
+  assertEqual
+    "Fibonacci built-in symbolic form"
+    "1 / (1 - x - x^2)"
+    (builtinSymbolicForm fibonacci)
+
+  assertEqual
+    "Fibonacci built-in coefficients"
+    [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
+    (gfTake 10 (builtinGeneratingFunction fibonacci))
+
+  case lookupBuiltin "FIBONACCI" of
+    Nothing -> do
+      putStrLn "FAILED: case-insensitive Fibonacci lookup"
+      exitFailure
+
+    Just result ->
+      assertEqual
+        "case-insensitive Fibonacci lookup"
+        "fibonacci"
+        (builtinName result)
+
+  assertEqual
+    "unknown built-in lookup"
+    Nothing
+    (case lookupBuiltin "unknown" of
+       Nothing -> Nothing
+       Just result -> Just (builtinName result))

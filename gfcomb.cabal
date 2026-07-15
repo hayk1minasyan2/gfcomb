@@ -64,6 +64,8 @@ library
                 GFComb.Polynomial
                 GFComb.Conversion
                 GFComb.RationalGF
+                GFComb.Recurrence
+                GFComb.Builtins
 
     -- Modules included in this library but not exported.
     -- other-modules:
