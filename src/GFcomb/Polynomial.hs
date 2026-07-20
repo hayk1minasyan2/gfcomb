@@ -23,11 +23,16 @@ module GFComb.Polynomial
     polynomialPow,
 
     -- Other operations
-    polynomialEvaluate
+    polynomialEvaluate,
+
+    -- Root-finding
+    polynomialFindRationalRoot,
+    polynomialExtractRationalRoots,
+    polynomialDivideByLinearRoot
   )
 where
 
-import Data.Ratio (denominator, numerator)
+import Data.Ratio (denominator, numerator, (%))
 import Numeric.Natural (Natural)
 
 ---------------------
@@ -225,7 +230,7 @@ polynomialPow polynomial power
 
 polynomialEvaluate :: Polynomial -> Rational -> Rational
 polynomialEvaluate (Polynomial coefficients) value =
-    foldr (\coefficient accumulated -> coefficient + value * accumulated) 0 coefficients
+    foldr (\coefficient acc -> coefficient + value * acc) 0 coefficients
 
 ---------------------
 -- Helpers
@@ -245,3 +250,97 @@ zipWithLonger _ [] [] = []
 zipWithLonger operation (x : xs) [] = operation x 0 : zipWithLonger operation xs []
 zipWithLonger operation [] (y : ys) = operation 0 y : zipWithLonger operation [] ys
 zipWithLonger operation (x : xs) (y : ys) = operation x y : zipWithLonger operation xs ys
+
+
+----------------------
+-- Root-finding
+----------------------
+
+-- Find one rational root of a polynomial with rational coefficients, via
+-- the rational root theorem.
+--
+-- If the constant term is zero, 0 is a root and is returned immediately.
+-- Otherwise the polynomial is scaled to integer coefficients (multiplying
+-- all coefficients by the lcm of the coefficients' denominators (this changes
+-- nothing about where the roots are)), and candidates p/q are formed from
+-- divisors p of the resulting constant term and divisors q of the
+-- resulting leading coefficient, then tested directly by evaluation. (fastest way to check)
+--
+-- Returns Nothing if the polynomial is zero, constant, or has no rational root.
+
+polynomialFindRationalRoot :: Polynomial -> Maybe Rational
+polynomialFindRationalRoot polynomial =
+  case polynomialDegree polynomial of
+    Nothing -> Nothing
+    Just 0 -> Nothing
+    Just _
+      | polynomialConstantTerm polynomial == 0 -> Just 0
+      | otherwise -> findFirstRoot candidates
+  where
+    coefficients = polynomialCoefficients polynomial
+
+    scaleFactor :: Integer
+    scaleFactor = foldr (lcm . denominator) 1 coefficients
+
+    integerCoefficients :: [Integer]
+    integerCoefficients = map (\c -> numerator (c * fromInteger scaleFactor)) coefficients
+
+    constantTerm = head integerCoefficients
+    leadingCoefficient = last integerCoefficients
+
+    candidates :: [Rational]
+    candidates = [ sign * (p % q) | p <- divisorsOf (abs constantTerm),
+                                    q <- divisorsOf (abs leadingCoefficient),
+                                    sign <- [1, -1]]
+
+    findFirstRoot :: [Rational] -> Maybe Rational
+    findFirstRoot [] = Nothing
+    findFirstRoot (candidate : rest)
+      | polynomialEvaluate polynomial candidate == 0 = Just candidate
+      | otherwise = findFirstRoot rest
+
+
+divisorsOf :: Integer -> [Integer]
+divisorsOf 0 = [1]
+divisorsOf n = [d | d <- [1 .. n], n `mod` d == 0]
+
+-- Repeatedly extract rational roots (via the rational root theorem) until
+-- none remain, returning the list of roots found - in the order
+-- extracted, with a root of multiplicity k appearing k times - together
+-- with whatever polynomial remains after dividing them all out.
+polynomialExtractRationalRoots :: Polynomial -> ([Rational], Polynomial)
+polynomialExtractRationalRoots polynomial =
+  case polynomialFindRationalRoot polynomial of
+    Nothing -> ([], polynomial)
+    Just root ->
+      let reduced = polynomialDivideByLinearRoot polynomial root
+          (moreRoots, remaining) = polynomialExtractRationalRoots reduced
+       in (root : moreRoots, remaining)
+
+-- Divide a polynomial by (x - r).
+--
+-- This assumes r is an exact root of the polynomial (as produced by
+-- polynomialFindRationalRoot); the remainder of the division is not
+-- checked. Using an r that is not an exact root will produce a meaningless result.
+
+polynomialDivideByLinearRoot :: Polynomial -> Rational -> Polynomial
+polynomialDivideByLinearRoot polynomial root =
+  case reverse (polynomialCoefficients polynomial) of
+    [] -> polynomialZero
+    (leadingCoefficient : remainingDescending) ->
+      let syntSteps = scanl (\acc c -> c + root * acc) leadingCoefficient remainingDescending
+          quotientDescending = init syntSteps
+       in polynomialFromList (reverse quotientDescending)
+
+
+
+
+
+
+
+
+
+
+
+
+
