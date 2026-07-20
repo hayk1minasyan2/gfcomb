@@ -78,4 +78,5 @@ Planned next steps include coefficient commands, user-defined recurrences, and g
 Hayk Minasyan
 
 Individual Software Project, Charles University
+
 Supervisor: Vít Šefl
