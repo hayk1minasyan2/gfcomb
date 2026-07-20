@@ -328,7 +328,7 @@ polynomialDivideByLinearRoot polynomial root =
   case reverse (polynomialCoefficients polynomial) of
     [] -> polynomialZero
     (leadingCoefficient : remainingDescending) ->
-      let syntSteps = scanl (\acc c -> c + root * acc) leadingCoefficient remainingDescending
+      let syntSteps = scanl (\acc c -> c + root*acc) leadingCoefficient remainingDescending
           quotientDescending = init syntSteps
        in polynomialFromList (reverse quotientDescending)
 
