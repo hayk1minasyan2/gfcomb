@@ -38,6 +38,18 @@ main = do
 
   testBuiltins
 
+  testGfShift
+  testCatalanViaSelfReference
+  testGfSqrtWithSeed
+  testGfSqrtErrors
+  testGeneralizedBinomial
+  testCatalanClosedFormMatchesSelfReference
+
+  testRecurrenceClosedFormFibonacci
+  testRecurrenceClosedFormAllRationalRoots
+  testRecurrenceClosedFormComplexRootsUnavailable
+  testRecurrenceClosedFormRepeatedRootUnavailable
+
   putStrLn "All tests passed."
 
 assertEqual :: (Eq a, Show a) => String -> a -> a -> IO ()
@@ -470,3 +482,233 @@ testBuiltins = do
     (case lookupBuiltin "unknown" of
        Nothing -> Nothing
        Just result -> Just (builtinName result))
+
+
+testGfShift :: IO ()
+testGfShift = do
+  assertEqual
+    "gfShift 0 is identity"
+    [1, 2, 3, 0, 0]
+    (gfTake 5 (gfShift 0 (gfFromList [1, 2, 3])))
+
+  assertEqual
+    "gfShift 2 prepends two zeros"
+    [0, 0, 1, 2, 3, 0, 0]
+    (gfTake 7 (gfShift 2 (gfFromList [1, 2, 3])))
+
+-- The Catalan numbers, defined directly as a self-referential GF with
+-- gfShift. This definition terminates and produces correct coefficients lazily, whereas
+-- the equivalent definition using "gfMul gfVariable" instead of
+-- "gfShift 1" does not terminate
+--
+testCatalanViaSelfReference :: IO ()
+testCatalanViaSelfReference =
+  assertEqual
+    "Catalan numbers via self-referential gfShift definition"
+    [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+    (gfTake 10 catalan)
+  where
+    catalan :: GF
+    catalan = gfAdd gfOne (gfShift 1 (gfMul catalan catalan))
+
+testGfSqrtWithSeed :: IO ()
+testGfSqrtWithSeed = do
+  case gfSqrtWithSeed 1 (gfFromList [1, -4]) of
+    Left err -> do
+      putStrLn ("FAILED: sqrt(1 - 4x) returned " ++ show err)
+      exitFailure
+
+    Right root -> do
+      assertEqual
+        "sqrt(1 - 4x) coefficients"
+        [1, -2, -2, -4, -10, -28]
+        (gfTake 6 root)
+
+      assertEqual
+        "sqrt(1 - 4x) squares back to 1 - 4x"
+        (gfTake 8 (gfFromList [1, -4]))
+        (gfTake 8 (root * root))
+
+  -- case: sqrt(1) = 1
+  case gfSqrtWithSeed 1 gfOne of
+    Left err -> do
+      putStrLn ("FAILED: sqrt(1) returned " ++ show err)
+      exitFailure
+
+    Right root ->
+      assertEqual
+        "sqrt(1) coefficients"
+        [1, 0, 0, 0, 0]
+        (gfTake 5 root)
+
+testGfSqrtErrors :: IO ()
+testGfSqrtErrors = do
+  case gfSqrtWithSeed 0 gfOne of
+    Left (InvalidSqrtSeed 0 1) -> pure ()
+    other -> do
+      putStrLn ("FAILED: zero seed should be rejected, got " ++ show other)
+      exitFailure
+
+  case gfSqrtWithSeed 2 gfOne of
+    Left (InvalidSqrtSeed 2 1) -> pure ()
+    other -> do
+      putStrLn ("FAILED: seed not squaring to the constant term should be rejected, got " ++ show other)
+      exitFailure
+
+testGeneralizedBinomial :: IO ()
+testGeneralizedBinomial = do
+  assertEqual
+    "(1+x)^3 matches ordinary binomial coefficients"
+    [1, 3, 3, 1, 0, 0]
+    (gfTake 6 (generalizedBinomial 3))
+
+  -- Cross-check: (1 + u)^(1/2) composed with u = -4x should reproduce the
+  -- same sqrt(1 - 4x) series computed independently via gfSqrtWithSeed.
+  case gfCompose (generalizedBinomial (1 / 2)) (gfFromList [0, -4]) of
+    Left err -> do
+      putStrLn ("FAILED: generalizedBinomial composition returned " ++ show err)
+      exitFailure
+
+    Right viaBinomial ->
+      case gfSqrtWithSeed 1 (gfFromList [1, -4]) of
+        Left err -> do
+          putStrLn ("FAILED: sqrt(1 - 4x) returned " ++ show err)
+          exitFailure
+
+        Right viaNewtonStyle ->
+          assertEqual
+            "generalizedBinomial and gfSqrtWithSeed agree on sqrt(1 - 4x)"
+            (gfTake 8 viaNewtonStyle)
+            (gfTake 8 viaBinomial)
+
+
+testCatalanClosedFormMatchesSelfReference :: IO ()
+testCatalanClosedFormMatchesSelfReference =
+  case gfSqrtWithSeed 1 (gfFromList [1, -4]) of
+    Left err -> do
+      putStrLn ("FAILED: sqrt(1 - 4x) returned " ++ show err)
+      exitFailure
+
+    Right root -> do
+      let dropLeadingZero gf = gfFromList (tail (gfTake 200 gf))
+          numerator = dropLeadingZero (gfOne - root)
+          denominator = dropLeadingZero (gfScale 2 gfVariable)
+
+      case gfDivide numerator denominator of
+        Left err -> do
+          putStrLn ("FAILED: Catalan closed-form division returned " ++ show err)
+          exitFailure
+
+        Right closedFormCatalan -> do
+          let selfReferentialCatalan :: GF
+              selfReferentialCatalan =
+                gfAdd gfOne (gfShift 1 (gfMul selfReferentialCatalan selfReferentialCatalan))
+
+          assertEqual
+            "closed-form Catalan matches self-referential Catalan"
+            (gfTake 10 selfReferentialCatalan)
+            (gfTake 10 closedFormCatalan)
+
+----------------------------------------
+-- Closed form for linear recurrences
+----------------------------------------
+
+-- Check that a closed form agrees with 'recurrenceTermAt' for every n from
+-- 0 up to (and including) maxN, one at a time.
+-- recursive case (check the current n, then move on to n + 1).
+checkClosedFormAgreesWithRecurrence :: String -> LinearRecurrence -> ClosedFormResult -> Int -> Int -> IO ()
+checkClosedFormAgreesWithRecurrence label recurrence closedForm n maxN
+  | n > maxN = pure ()
+  | otherwise = do
+      assertEqual
+        (label ++ " matches recurrenceTermAt at n=" ++ show n)
+        (recurrenceTermAt n recurrence)
+        (closedFormValueAt closedForm n)
+      checkClosedFormAgreesWithRecurrence label recurrence closedForm (n + 1) maxN
+
+-- Fibonacci has an irrational (golden-ratio) characteristic root pair, so
+-- this is the main test that the quadratic-surd path is correct: the
+-- closed form is checked against 'recurrenceTermAt' for many n, and its
+-- exact printed form is checked against the hand-derived value
+-- ( phi/sqrt(5) and -psi/sqrt(5), written out as (5 +- sqrt(5))/10 ).
+testRecurrenceClosedFormFibonacci :: IO ()
+testRecurrenceClosedFormFibonacci =
+  case linearRecurrence [1, 1] [1, 1] of
+    Left err -> do
+      putStrLn ("FAILED: Fibonacci recurrence returned " ++ show err)
+      exitFailure
+
+    Right recurrence -> do
+      let closedForm = recurrenceClosedForm recurrence
+
+      case closedForm of
+        NoClosedForm reason -> do
+          putStrLn ("FAILED: expected a closed form for Fibonacci, got: " ++ reason)
+          exitFailure
+        ClosedForm terms ->
+          assertEqual "Fibonacci closed form has two terms" 2 (length terms)
+
+      checkClosedFormAgreesWithRecurrence "Fibonacci closed form" recurrence closedForm 0 20
+
+      assertEqual
+        "Fibonacci closed form display"
+        "a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*sqrt(5)) * (1/2 - 1/2*sqrt(5))^n"
+        (showClosedForm closedForm)
+
+-- a_n = 6 a_(n-1) - 11 a_(n-2) + 6 a_(n-3), with a_n = 1^n + 2^n + 3^n,
+-- whose characteristic polynomial y^3 - 6y^2 + 11y - 6 factors completely
+-- into three rational roots (1, 2, 3) -- exercises the "no quadratic
+-- factor needed at all" path, and a recurrence of order higher than 2.
+testRecurrenceClosedFormAllRationalRoots :: IO ()
+testRecurrenceClosedFormAllRationalRoots =
+  case linearRecurrence [6, -11, 6] [3, 6, 14] of
+    Left err -> do
+      putStrLn ("FAILED: order-3 all-rational-root recurrence returned " ++ show err)
+      exitFailure
+
+    Right recurrence -> do
+      let closedForm = recurrenceClosedForm recurrence
+
+      case closedForm of
+        NoClosedForm reason -> do
+          putStrLn ("FAILED: expected a closed form, got: " ++ reason)
+          exitFailure
+        ClosedForm terms ->
+          assertEqual "order-3 closed form has three terms" 3 (length terms)
+
+      checkClosedFormAgreesWithRecurrence "order-3 closed form" recurrence closedForm 0 15
+
+-- a_n = -a_(n-2) has characteristic roots +-i (complex), so no real closed
+-- form exists in this system; it must be reported as such, not crash or
+-- silently return a wrong answer.
+testRecurrenceClosedFormComplexRootsUnavailable :: IO ()
+testRecurrenceClosedFormComplexRootsUnavailable =
+  case linearRecurrence [0, -1] [1, 0] of
+    Left err -> do
+      putStrLn ("FAILED: complex-root recurrence returned " ++ show err)
+      exitFailure
+
+    Right recurrence ->
+      case recurrenceClosedForm recurrence of
+        NoClosedForm _ -> pure ()
+        ClosedForm terms -> do
+          putStrLn ("FAILED: expected no closed form for a complex-root recurrence, got: " ++ show terms)
+          exitFailure
+
+-- a_n = 4 a_(n-1) - 4 a_(n-2) has a repeated characteristic root (2, with
+-- multiplicity 2), which needs an n * 2^n term this module doesn't
+-- produce, so it must be reported as unavailable rather than silently
+-- wrong.
+testRecurrenceClosedFormRepeatedRootUnavailable :: IO ()
+testRecurrenceClosedFormRepeatedRootUnavailable =
+  case linearRecurrence [4, -4] [1, 4] of
+    Left err -> do
+      putStrLn ("FAILED: repeated-root recurrence returned " ++ show err)
+      exitFailure
+
+    Right recurrence ->
+      case recurrenceClosedForm recurrence of
+        NoClosedForm _ -> pure ()
+        ClosedForm terms -> do
+          putStrLn ("FAILED: expected no closed form for a repeated-root recurrence, got: " ++ show terms)
+          exitFailure
