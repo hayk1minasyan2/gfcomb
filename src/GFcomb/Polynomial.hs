@@ -9,6 +9,7 @@ module GFComb.Polynomial
 
     -- Inspection
     polynomialCoefficients,
+    polynomialCoefficientAt,
     polynomialConstantTerm,
     polynomialDegree,
     polynomialLeadingCoefficient,
@@ -122,6 +123,16 @@ polynomialVariable = Polynomial [0, 1]
 -- The coefficients are returned in ascending order of degree.
 polynomialCoefficients :: Polynomial -> [Rational]
 polynomialCoefficients (Polynomial coefficients) = coefficients
+
+-- The coefficient of degree 'index' in a polynomial, or 0 beyond its
+-- degree (similar to how a GF behaves, since Polynomial's own coefficient
+-- list is normalized to drop trailing zeros).
+polynomialCoefficientAt :: Polynomial -> Int -> Rational
+polynomialCoefficientAt polynomial index
+  | index < 0 = 0
+  | otherwise = case drop index (polynomialCoefficients polynomial) of
+      (coefficient : _) -> coefficient
+      [] -> 0
 
 -- Return the degree of a polynomial.
 --
