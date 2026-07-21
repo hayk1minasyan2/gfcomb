@@ -65,6 +65,7 @@ library
                 GFComb.Conversion
                 GFComb.RationalGF
                 GFComb.Recurrence
+                GFComb.AlgebraicGF
                 GFComb.Builtins
 
     -- Modules included in this library but not exported.
