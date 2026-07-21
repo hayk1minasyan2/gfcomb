@@ -58,6 +58,11 @@ main = do
   testLagrangeInversionCustomCubic
   testLagrangeInversionMatchesMixedEquation
   testAsLagrangeFormRefusesHigherXPower
+  
+  testAlgebraicClosedFormCatalan
+  testAlgebraicClosedFormBranchSelection
+  testAlgebraicClosedFormRejectsWrongY0
+  testAsQuadraticInYRefusesNonQuadratic
 
   putStrLn "All tests passed."
 
@@ -853,3 +858,73 @@ testAsLagrangeFormRefusesHigherXPower = do
     "Y = 1 + x^2*Y via solveEquation"
     [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
     (gfTake 10 (solveEquation equation))
+
+
+-------------------
+-- Closed form for equations quadratic in the unknown
+--------------------
+ 
+-- Catalan's equation is quadratic in Y (Y = 1 + x*Y^2), so this checks
+-- 'algebraicClosedForm' against both the known Catalan sequence and
+-- 'solveEquation'.
+testAlgebraicClosedFormCatalan :: IO ()
+testAlgebraicClosedFormCatalan =
+  case algebraicClosedForm catalanEquation 1 of
+    Left err -> do
+      putStrLn ("FAILED: Catalan via algebraicClosedForm returned " ++ err)
+      exitFailure
+ 
+    Right closedFormCatalan -> do
+      assertEqual
+        "Catalan via algebraicClosedForm"
+        [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+        (gfTake 10 closedFormCatalan)
+ 
+      assertEqual
+        "Catalan via algebraicClosedForm matches solveEquation"
+        (gfTake 15 (solveEquation catalanEquation))
+        (gfTake 15 closedFormCatalan)
+ 
+-- Y = x - x*Y + Y^2 (equivalently Y^2 - (1+x)*Y + x = 0) has two
+-- perfectly good rational-function roots, Y = 1 and Y = x, with a
+-- denominator (2*a(x) = 2) that never vanishes. Unlike Catalan,
+-- there is no removable singularity forcing one branch. The caller's
+-- expected Y(0) genuinely determines which of the two roots comes back.
+testAlgebraicClosedFormBranchSelection :: IO ()
+testAlgebraicClosedFormBranchSelection = do
+  let equation = Add (Sub X (Mul X Y)) (Pow Y 2)
+ 
+  case algebraicClosedForm equation 1 of
+    Left err -> do
+      putStrLn ("FAILED: expected the Y(0)=1 branch to succeed, got " ++ err)
+      exitFailure
+    Right root ->
+      assertEqual "Y(0) = 1 branch is the constant series 1" [1, 0, 0, 0, 0] (gfTake 5 root)
+ 
+  case algebraicClosedForm equation 0 of
+    Left err -> do
+      putStrLn ("FAILED: expected the Y(0)=0 branch to succeed, got " ++ err)
+      exitFailure
+    Right root ->
+      assertEqual "Y(0) = 0 branch is the series x" [0, 1, 0, 0, 0] (gfTake 5 root)
+ 
+-- A Y(0) that doesn't actually satisfy the equation at x = 0 (Catalan
+-- numbers do not start at 2) must be rejected outright, not silently
+-- produce a series that doesn't match the recurrence.
+testAlgebraicClosedFormRejectsWrongY0 :: IO ()
+testAlgebraicClosedFormRejectsWrongY0 =
+  case algebraicClosedForm catalanEquation 2 of
+    Left _ -> pure ()
+    Right result -> do
+      putStrLn ("FAILED: expected Y(0)=2 to be rejected for Catalan's equation, got: " ++ show (gfTake 5 result))
+      exitFailure
+ 
+-- Ternary trees' equation (Y = 1 + x*Y^3) has no Y^2 term at all, so it
+-- is not of the quadratic shape and 'asQuadraticInY' must refuse it.
+testAsQuadraticInYRefusesNonQuadratic :: IO ()
+testAsQuadraticInYRefusesNonQuadratic =
+  case asQuadraticInY ternaryTreesEquation of
+    Nothing -> pure ()
+    Just result -> do
+      putStrLn ("FAILED: expected ternary trees' equation to be refused by asQuadraticInY, got: " ++ show result)
+      exitFailure
