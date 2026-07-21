@@ -8,11 +8,32 @@ module GFComb.AlgebraicGF
     -- Lagrange inversion for Y = c + x*phi(Y)
     asLagrangeForm,
     lagrangeCoefficient,
-    lagrangeCoefficients
+    lagrangeCoefficients,
+
+    -- Closed form for equations quadratic in the unknown
+    QuadraticInY (..),
+    asQuadraticInY,
+    algebraicClosedForm
   )
 where
 
-import GFComb.Core (GF, gfAdd, gfConstant, gfMul, gfPow, gfShift, gfSub, gfVariable)
+import GFComb.Core
+  ( GF,
+    gfAdd,
+    gfCoefficients,
+    gfConstant,
+    gfConstantTerm,
+    gfDivide,
+    gfFromCoefficients,
+    gfMul,
+    gfPow,
+    gfScale,
+    gfShift,
+    gfSqrtWithSeed,
+    gfSub,
+    gfVariable
+  )
+
 import GFComb.Polynomial
   ( Polynomial,
     polynomialAdd,
@@ -255,3 +276,178 @@ lagrangeCoefficient c phi n =
 lagrangeCoefficients :: Rational -> Expr -> Int -> [Rational]
 lagrangeCoefficients c phi count = [lagrangeCoefficient c phi n | n <- [0 .. count - 1]]
 
+
+------------------------------------
+-- Closed form for equations quadratic in the unknown
+-------------------------------------
+ 
+-- The three coefficient expressions of a(x)*Y^2 + b(x)*Y + c(x) = 0,
+-- obtained by rearranging Y = R.H.S. None of quadA, quadB, quadC contain
+-- 'Y' (they are the "coefficients", in x alone)
+
+data QuadraticInY = QuadraticInY
+  { quadA :: Expr,
+    quadB :: Expr,
+    quadC :: Expr
+  }
+  deriving (Eq, Show)
+ 
+-- Does an expression contain 'Y' anywhere?
+containsY :: Expr -> Bool
+containsY X = False
+containsY Y = True
+containsY (Lit _) = False
+containsY (Add a b) = containsY a || containsY b
+containsY (Sub a b) = containsY a || containsY b
+containsY (Mul a b) = containsY a || containsY b
+containsY (Pow a _) = containsY a
+ 
+-- Recognise an equation Y = rhs as being quadratic in Y, i.e. rhs - Y can
+-- be written as a(x)*Y^2 + b(x)*Y + c(x) for some x-only expressions
+-- a, b, c.
+--
+-- Like 'asLagrangeForm', this works by fully expanding rhs into signed
+-- multiplicative terms (distributing Mul over Add/Sub via
+-- 'expandedTerms') and classifying each term by its degree in Y (0, 1,
+-- or 2); a degree outside {0, 1, 2} means the equation isn't quadratic in
+-- Y and this returns 'Nothing' (this is out of the scope of the project.
+-- A quadratic equation always has a closed radical solution (the quadratic formula)
+-- Cubics and quartics also technically have closed forms (Cardano's and Ferrari's formulas), 
+-- but they're substantially messier. Quintics and beyond generally have no closed radical form at all). 
+-- The degree-1 bucket has 1 subtracted ('Sub _ (Lit 1)') to account for moving Y from the equation's left
+-- side to the right side.
+--
+-- An equation with no Y^2 term at all (e.g. a plain linear equation) is
+-- not what this function is for, and also returns 'Nothing'.
+-- 'solveEquation' handles those directly.
+
+asQuadraticInY :: Expr -> Maybe QuadraticInY
+asQuadraticInY rhs = do
+  classifiedTerms <- mapM classifyTerm (expandedTerms rhs)
+  let byDegree degree = [term | (d, term) <- classifiedTerms, d == degree]
+      sumTerms terms = case terms of
+        [] -> Lit 0
+        (firstTerm : remainingTerms) -> foldl Add firstTerm remainingTerms
+  case byDegree 2 of
+    [] -> Nothing
+    quadraticTerms ->
+      Just
+        ( QuadraticInY
+            (sumTerms quadraticTerms)
+            (Sub (sumTerms (byDegree 1)) (Lit 1))
+            (sumTerms (byDegree 0))
+        )
+  where
+    classifyTerm (isPositive, term) = do
+      (degree, remainder) <- yDegreeAndRemainder term
+      if degree < 0 || degree > 2
+        then Nothing
+        else Just (degree, if isPositive then remainder else Sub (Lit 0) remainder)
+ 
+-- The Y-degree analogue of 'xDegreeAndRemainder'. For a single
+-- multiplicative term (no Add/Sub inside), count how many factors of Y it
+-- has and return what's left after removing them all.
+yDegreeAndRemainder :: Expr -> Maybe (Int, Expr)
+yDegreeAndRemainder X = Just (0, X)
+yDegreeAndRemainder Y = Just (1, Lit 1)
+yDegreeAndRemainder (Lit c) = Just (0, Lit c)
+yDegreeAndRemainder (Pow Y n) = Just (n, Lit 1)
+yDegreeAndRemainder (Pow base n)
+  | containsY base = Nothing
+  | otherwise = Just (0, Pow base n)
+yDegreeAndRemainder (Mul a b) = do
+  (degreeA, remainderA) <- yDegreeAndRemainder a
+  (degreeB, remainderB) <- yDegreeAndRemainder b
+  Just (degreeA + degreeB, Mul remainderA remainderB)
+yDegreeAndRemainder (Add _ _) = Nothing -- this is already handled by 'expandedTerms', and shouldn't occurre
+yDegreeAndRemainder (Sub _ _) = Nothing -- this is already handled by 'expandedTerms', and shouldn't occurre
+ 
+-- Solve a(x)*Y^2 + b(x)*Y + c(x) = 0 for Y as a formal power series, via
+-- the quadratic formula
+--
+--   Y = ( -b(x) +- sqrt(b(x)^2 - 4*a(x)*c(x)) ) / (2*a(x))
+--
+-- given the caller's expected value of Y(0) (e.g. 1 for Catalan
+-- numbers, since C(0) = 1). This single expected value is enough to
+-- determine everything else:
+--
+--   * It must satisfy the equation evaluated at x = 0,
+--     a(0)*y0^2 + b(0)*y0 + c(0) = 0 - checked explicitly up front, so a
+--     wrong Y(0) is reported clearly rather than producing a wrong
+--     series. (This check matters even when a(0) = 0, the most common
+--     case for combinatorial specifications, where the +-sqrt branch
+--     choice below turns out not to depend on Y(0) at all, and only this
+--     explicit check catches a wrong Y(0) in that case.)
+--   * Rearranging the quadratic formula at x = 0 gives the exact seed
+--     'gfSqrtWithSeed' needs for the discriminant's square root.
+--     seed = 2*a(0)*y0 + b(0). This is always a valid seed when y0
+--     satisfies the equation above (squaring it reproduces the
+--     discriminant's constant term exactly), so the caller never has to
+--     separately guess which of the two square roots to use.
+--
+-- When a(x) has a zero constant term, the division by 2*a(x) has a removable
+-- singularity at x = 0 - both the numerator and denominator vanish together, 
+-- and the shared factor of x is taken out from each before dividing 
+-- so that the result is still a valid formal power series.
+algebraicClosedForm :: Expr -> Rational -> Either String GF
+algebraicClosedForm rhs expectedConstantTerm =
+  case asQuadraticInY rhs of
+    Nothing -> Left "this equation is not quadratic in the unknown"
+    Just (QuadraticInY aExpr bExpr cExpr)
+      | a0 * y0 * y0 + b0 * y0 + c0 /= 0 ->
+          Left
+            ( show expectedConstantTerm
+                ++ " does not satisfy the equation at x = 0 (with a(0) = "
+                ++ show a0
+                ++ ", b(0) = "
+                ++ show b0
+                ++ ", c(0) = "
+                ++ show c0
+                ++ ")"
+            )
+      | otherwise ->
+          case gfSqrtWithSeed seed discriminant of
+            Left err -> Left ("could not take the square root of the discriminant: " ++ show err)
+            Right sqrtDiscriminant -> divideRemovingCommonZero (gfSub sqrtDiscriminant bGF) (gfScale 2 aGF)
+      where
+        aGF = evalExpr aExpr Nothing
+        bGF = evalExpr bExpr Nothing
+        cGF = evalExpr cExpr Nothing
+        a0 = gfConstantTerm aGF
+        b0 = gfConstantTerm bGF
+        c0 = gfConstantTerm cGF
+        y0 = expectedConstantTerm
+        seed = 2 * a0 * y0 + b0
+        discriminant = gfSub (gfMul bGF bGF) (gfScale 4 (gfMul aGF cGF))
+ 
+-- Divide two series, stripping a shared factor of x from both first if
+-- the denominator's constant term is zero but the numerator's constant
+-- term is zero too.
+
+divideRemovingCommonZero :: GF -> GF -> Either String GF
+divideRemovingCommonZero = go (0 :: Int)
+  where
+    maxStrips = 10 :: Int
+    -- If we've already stripped a factor of x maxStrips times 
+    -- and denominator still has a zero constant term, give up 
+    -- with a clear message rather than looping forever 
+    -- (this only matters for a improperly formatted equation.
+    -- every well-formed one we'll actually feed in it needs at most one or two strips).
+    
+    go strips numerator denominator
+      | gfConstantTerm denominator /= 0 =
+          case gfDivide numerator denominator of
+            Left err -> Left ("division failed: " ++ show err)
+            Right result -> Right result
+      | strips >= maxStrips =
+          Left "the denominator's constant term is still zero after removing several common factors of x"
+      | gfConstantTerm numerator /= 0 =
+          Left "the numerator and denominator do not share a removable factor of x (division by a series with a zero constant term)"
+      | otherwise = go (strips + 1) (gfDivideByX numerator) (gfDivideByX denominator)
+ 
+-- Divide a series by x once, dropping its (necessarily zero) constant
+-- term. Only meaningful when that constant term actually is 0. used only
+-- by 'divideRemovingCommonZero', which checks that itself.
+gfDivideByX :: GF -> GF
+gfDivideByX gf = gfFromCoefficients (tail (gfCoefficients gf))
+ 
