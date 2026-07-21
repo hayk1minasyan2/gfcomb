@@ -6,6 +6,7 @@ import GFComb.Polynomial
 import GFComb.Conversion
 import GFComb.RationalGF
 import GFComb.Recurrence
+import GFComb.AlgebraicGF
 import GFComb.Builtins
 import System.Exit (exitFailure)
 
@@ -49,6 +50,14 @@ main = do
   testRecurrenceClosedFormAllRationalRoots
   testRecurrenceClosedFormComplexRootsUnavailable
   testRecurrenceClosedFormRepeatedRootUnavailable
+
+  testSolveEquationCatalan
+  testSolveEquationTernaryTrees
+  testLagrangeInversionMatchesCatalan
+  testLagrangeInversionMatchesTernaryTrees
+  testLagrangeInversionCustomCubic
+  testLagrangeInversionMatchesMixedEquation
+  testAsLagrangeFormRefusesHigherXPower
 
   putStrLn "All tests passed."
 
@@ -712,3 +721,135 @@ testRecurrenceClosedFormRepeatedRootUnavailable =
         ClosedForm terms -> do
           putStrLn ("FAILED: expected no closed form for a repeated-root recurrence, got: " ++ show terms)
           exitFailure
+
+ 
+------------------------------------
+-- AlgebraicGF: guarded self-reference and Lagrange inversion
+-------------------------------------
+ 
+-- Catalan numbers via the general guarded solver, driven by a parsed-style
+-- Expr rather than hand-written Haskell self-reference. This is the same
+-- equation as 'testCatalanViaSelfReference' above, so it's also a check
+-- that 'solveEquation' agrees with the hand-written definition.
+testSolveEquationCatalan :: IO ()
+testSolveEquationCatalan =
+  assertEqual
+    "Catalan numbers via solveEquation (Y = 1 + x*Y^2)"
+    [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+    (gfTake 10 (solveEquation catalanEquation))
+ 
+-- The equation for ternary trees, Y = 1 + x*Y^3: a cubic equation, which
+-- 'solveEquation' should handle exactly as Catalan's quadratic one, 
+-- since the guarded self-reference technique doesn't care about the
+-- degree of phi.
+testSolveEquationTernaryTrees :: IO ()
+testSolveEquationTernaryTrees =
+  assertEqual
+    "ternary trees via solveEquation (Y = 1 + x*Y^3)"
+    [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
+    (gfTake 10 (solveEquation ternaryTreesEquation))
+ 
+catalanEquation :: Expr
+catalanEquation = Add (Lit 1) (Mul X (Pow Y 2))
+ 
+ternaryTreesEquation :: Expr
+ternaryTreesEquation = Add (Lit 1) (Mul X (Pow Y 3))
+ 
+-- Lagrange inversion should recognise Catalan's equation as being of the
+-- form Y = c + x*phi(Y), and its coefficients should agree exactly with
+-- the guarded solver's (two independent algorithms, same answer).
+testLagrangeInversionMatchesCatalan :: IO ()
+testLagrangeInversionMatchesCatalan =
+  case asLagrangeForm catalanEquation of
+    Nothing -> do
+      putStrLn "FAILED: expected Catalan's equation to be recognised as Lagrange-invertible"
+      exitFailure
+    Just (c, phi) ->
+      assertEqual
+        "Catalan numbers via Lagrange inversion"
+        [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+        (lagrangeCoefficients c phi 10)
+ 
+-- Same cross-check for ternary trees. Lagrange inversion handles phi of
+-- any degree just as well as the guarded solver does.
+testLagrangeInversionMatchesTernaryTrees :: IO ()
+testLagrangeInversionMatchesTernaryTrees =
+  case asLagrangeForm ternaryTreesEquation of
+    Nothing -> do
+      putStrLn "FAILED: expected ternary trees' equation to be recognised as Lagrange-invertible"
+      exitFailure
+    Just (c, phi) ->
+      assertEqual
+        "ternary trees via Lagrange inversion"
+        [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
+        (lagrangeCoefficients c phi 10)
+ 
+-- A custom equation with no additive constant (c = 0) and a mixed
+-- quadratic-and-cubic phi, Y = x*(1 + Y^2 + Y^3), checked both ways:
+-- against the guarded solver directly, and via Lagrange inversion.
+testLagrangeInversionCustomCubic :: IO ()
+testLagrangeInversionCustomCubic = do
+  let equation = Mul X (Add (Add (Lit 1) (Pow Y 2)) (Pow Y 3))
+      expected = [0, 1, 0, 1, 1, 2, 5, 8, 21, 42]
+ 
+  assertEqual
+    "Y = x*(1 + Y^2 + Y^3) via solveEquation"
+    expected
+    (gfTake 10 (solveEquation equation))
+ 
+  case asLagrangeForm equation of
+    Nothing -> do
+      putStrLn "FAILED: expected Y = x*(1 + Y^2 + Y^3) to be recognised as Lagrange-invertible"
+      exitFailure
+    Just (c, phi) ->
+      assertEqual
+        "Y = x*(1 + Y^2 + Y^3) via Lagrange inversion"
+        expected
+        (lagrangeCoefficients c phi 10)
+ 
+-- Y = 1 + x*Y + x*Y^2 has two separate x*(...) terms, added together
+-- rather than already combined into one x*(...) node. 'asLagrangeForm'
+-- must notice that x can still be factored out of both of them together
+-- (x*Y + x*Y^2 = x*(Y + Y^2)), giving c = 1, phi = Y + Y^2 (not just
+-- recognise equations that already have a single x*(...) term written
+-- out). The resulting coefficients are checked against 'solveEquation',
+-- which has no such shape restriction and computes them independently.
+testLagrangeInversionMatchesMixedEquation :: IO ()
+testLagrangeInversionMatchesMixedEquation = do
+  let equation = Add (Add (Lit 1) (Mul X Y)) (Mul X (Pow Y 2))
+      expected = [1, 2, 6, 22, 90, 394, 1806, 8558, 41586, 206098]
+ 
+  assertEqual
+    "Y = 1 + x*Y + x*Y^2 via solveEquation"
+    expected
+    (gfTake 10 (solveEquation equation))
+ 
+  case asLagrangeForm equation of
+    Nothing -> do
+      putStrLn "FAILED: expected Y = 1 + x*Y + x*Y^2 to be recognised as Lagrange-invertible (x can be factored out of both x*(...) terms together)"
+      exitFailure
+    Just (c, phi) ->
+      assertEqual
+        "Y = 1 + x*Y + x*Y^2 via Lagrange inversion"
+        expected
+        (lagrangeCoefficients c phi 10)
+ 
+-- Y = 1 + x^2*Y has x to the second power in its only non-constant
+-- term, not the first, so it is genuinely not of the Y = c + x*phi(Y)
+-- shape (there is no way to factor out a single x and leave phi free of
+-- x). 'asLagrangeForm' must still refuse this, while 'solveEquation'
+-- computes its coefficients [1, 0, 1, 0, ...] (= 1/(1-x^2)).
+testAsLagrangeFormRefusesHigherXPower :: IO ()
+testAsLagrangeFormRefusesHigherXPower = do
+  let equation = Add (Lit 1) (Mul (Pow X 2) Y)
+ 
+  case asLagrangeForm equation of
+    Nothing -> pure ()
+    Just result -> do
+      putStrLn ("FAILED: expected Y = 1 + x^2*Y to be refused by asLagrangeForm, got: " ++ show result)
+      exitFailure
+ 
+  assertEqual
+    "Y = 1 + x^2*Y via solveEquation"
+    [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
+    (gfTake 10 (solveEquation equation))
