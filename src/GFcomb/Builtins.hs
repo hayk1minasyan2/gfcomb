@@ -11,6 +11,7 @@ module GFComb.Builtins
     fibonacci,
     catalan,
     binaryTrees,
+    ternaryTrees,
     allBuiltins,
     lookupBuiltin
   )
@@ -20,7 +21,7 @@ import Data.Char (toLower)
 import GFComb.AlgebraicGF
   ( Expr (..),
     algebraicClosedForm,
-    --solveEquation
+    solveEquation
   )
 import GFComb.Core
   ( GF,
@@ -141,13 +142,38 @@ binaryTrees =
       builtinGeneratingFunction = catalanClosedForm
     }
 
+
+
+----------------------------------------
+-- Ternary trees
+----------------------------------------
+ 
+-- T = 1 + x*T^3: a ternary tree is either a leaf, or a root with three
+-- subtrees, each itself a ternary tree.
+--
+-- This is cubic in T, so there is no
+-- closed radical form here (only coefficients), computed via guarded
+-- self-reference.
+ternaryTreesEquation :: Expr
+ternaryTreesEquation = Add (Lit 1) (Mul X (Pow Y 3))
+ 
+ternaryTrees :: BuiltinGF
+ternaryTrees =
+  BuiltinGF
+    { builtinName = "ternaryTrees",
+      builtinDescription = "Ternary trees by number of internal nodes: 1, 1, 3, 12, 55, 273, ...",
+      builtinSymbolicForm = "T = 1 + x*T^3 (no closed form; coefficients only)",
+      builtinGeneratingFunction = solveEquation ternaryTreesEquation
+    }
+ 
+
 ---------------------------
 -- Collection and lookup
 -------------------------------
 
 -- All predefined generating functions.
 allBuiltins :: [BuiltinGF]
-allBuiltins = [fibonacci, catalan, binaryTrees] -- TO BE ADDED
+allBuiltins = [fibonacci, catalan, binaryTrees, ternaryTrees] -- TO BE ADDED
 
 -- Find a built-in generating function by name.
 --
