@@ -512,6 +512,11 @@ testBuiltins = do
     False
     (builtinName catalan == builtinName binaryTrees)
 
+  assertEqual
+    "ternaryTrees built-in coefficients"
+    [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
+    (gfTake 10 (builtinGeneratingFunction ternaryTrees))
+
 
 testGfShift :: IO ()
 testGfShift = do
