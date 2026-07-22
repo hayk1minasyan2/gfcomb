@@ -497,6 +497,21 @@ testBuiltins = do
        Nothing -> Nothing
        Just result -> Just (builtinName result))
 
+  assertEqual
+    "Catalan built-in coefficients"
+    [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+    (gfTake 10 (builtinGeneratingFunction catalan))
+ 
+  assertEqual
+    "binaryTrees built-in has the same coefficients as catalan (both satisfy C = 1 + x*C^2)"
+    (gfTake 10 (builtinGeneratingFunction catalan))
+    (gfTake 10 (builtinGeneratingFunction binaryTrees))
+ 
+  assertEqual
+    "catalan and binaryTrees are distinct entries despite sharing coefficients"
+    False
+    (builtinName catalan == builtinName binaryTrees)
+
 
 testGfShift :: IO ()
 testGfShift = do
