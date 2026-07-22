@@ -517,6 +517,15 @@ testBuiltins = do
     [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
     (gfTake 10 (builtinGeneratingFunction ternaryTrees))
 
+  assertEqual
+    "partitions built-in coefficients"
+    [1, 1, 2, 3, 5, 7, 11, 15, 22, 30]
+    (gfTake 10 (builtinGeneratingFunction partitions))
+ 
+  assertEqual
+    "allBuiltins has five entries"
+    5
+    (length allBuiltins)
 
 testGfShift :: IO ()
 testGfShift = do
