@@ -12,6 +12,7 @@ module GFComb.Builtins
     catalan,
     binaryTrees,
     ternaryTrees,
+    partitions,
     allBuiltins,
     lookupBuiltin
   )
@@ -25,13 +26,13 @@ import GFComb.AlgebraicGF
   )
 import GFComb.Core
   ( GF,
-    -- gfCoeffAt,
-    -- gfDivide,
-    -- gfFromCoefficients,
-    -- gfMul,
-    -- gfOne,
-    -- gfShift,
-    -- gfSub
+    gfCoeffAt,
+    gfDivide,
+    gfFromCoefficients,
+    gfMul,
+    gfOne,
+    gfShift,
+    gfSub
   )
 import GFComb.Recurrence
   ( linearRecurrence,
@@ -166,6 +167,50 @@ ternaryTrees =
       builtinGeneratingFunction = solveEquation ternaryTreesEquation
     }
  
+-----------------------
+-- Integer partitions
+-----------------------
+ 
+-- The generating function for the number of ways to write n as a sum of
+-- positive integers (order does not matter).
+--
+--   P(x) = product_{k=1}^infinity  1 / (1 - x^k)
+--
+-- This does not fit GFComb.AlgebraicGF's equation-solving machinery at
+-- all (it's an infinite product, not a functional equation in a single
+-- unknown), so it is built directly here, one coefficient at a time.
+--
+-- The coefficient of x^n in the infinite product depends only on its first n factors 
+-- A factor 1/(1-x^k) for k > n contributes only terms of degree >= k > n, which
+-- cannot change any coefficient at degree <= n. So the n-th coefficient
+-- is read off as the finite product of the first n factors. Computing
+-- that finite product again for each n avoids ever trying to multiply
+-- infinitely many series together.
+
+partitionsGF :: GF
+partitionsGF = gfFromCoefficients [partitionCoefficientAt n | n <- [0 ..]]
+ 
+partitionCoefficientAt :: Int -> Rational
+partitionCoefficientAt n = gfCoeffAt (productOfFactorsUpTo n) n
+  where
+    productOfFactorsUpTo k = foldl gfMul gfOne [geometricFactor j | j <- [1 .. k]]
+ 
+    -- 1 / (1 - x^k), the generating function for "any number of parts
+    -- equal to k" in a partition.
+    geometricFactor k =
+      case gfDivide gfOne (gfSub gfOne (gfShift k gfOne)) of
+        Left err -> error ("GFComb.Builtins: invalid internal partitions factor: " ++ show err)
+        Right gf -> gf
+ 
+partitions :: BuiltinGF
+partitions =
+  BuiltinGF
+    { builtinName = "partitions",
+      builtinDescription = "Integer partitions: 1, 1, 2, 3, 5, 7, 11, 15, 22, 30, ...",
+      builtinSymbolicForm = "product_{k>=1} 1 / (1 - x^k)",
+      builtinGeneratingFunction = partitionsGF
+    }
+ 
 
 ---------------------------
 -- Collection and lookup
@@ -173,7 +218,7 @@ ternaryTrees =
 
 -- All predefined generating functions.
 allBuiltins :: [BuiltinGF]
-allBuiltins = [fibonacci, catalan, binaryTrees, ternaryTrees] -- TO BE ADDED
+allBuiltins = [fibonacci, catalan, binaryTrees, ternaryTrees, partitions]
 
 -- Find a built-in generating function by name.
 --
