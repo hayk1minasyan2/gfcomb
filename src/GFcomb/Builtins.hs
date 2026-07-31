@@ -19,6 +19,7 @@ module GFComb.Builtins
 where
 
 import Data.Char (toLower)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import GFComb.AlgebraicGF
   ( Expr (..),
     algebraicClosedForm,
@@ -76,22 +77,17 @@ instance Show BuiltinGF where
 
 fibonacci :: BuiltinGF
 fibonacci =
-  case linearRecurrence [1, 1] [1, 1] of
-    Left err ->
-      error
-        ( "GFComb.Builtins: invalid internal Fibonacci recurrence: "
-            ++ show err
-        )
-
-    Right recurrence ->
-      BuiltinGF
-        { builtinName = "fibonacci",
-          builtinDescription = "Fibonacci numbers: 1, 1, 2, 3, 5, 8, ...",
-          builtinSymbolicForm =
-            show (recurrenceRationalGF recurrence),
-          builtinGeneratingFunction =
-            recurrenceGF recurrence
-        }
+  BuiltinGF
+    { builtinName = "fibonacci",
+      builtinDescription = "Fibonacci numbers: 1, 1, 2, 3, 5, 8, ...",
+      builtinSymbolicForm =
+        show (recurrenceRationalGF recurrence),
+      builtinGeneratingFunction =
+        recurrenceGF recurrence
+    }
+  where
+    recurrence = linearRecurrence ((1, 1) :| [(1, 1)])
+ 
 
 ---------------------------
 -- Catalan numbers and binary trees
