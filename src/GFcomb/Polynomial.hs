@@ -1,13 +1,17 @@
+-- | Finite polynomials with rational coefficients: construction,
+-- inspection, arithmetic, evaluation, and root-finding via the rational
+-- root theorem.
 module GFComb.Polynomial
-  ( Polynomial,
+  ( -- * Polynomials
+    Polynomial,
 
-    -- Construction
+    -- * Construction
     polynomialFromList,
     polynomialZero,
     polynomialOne,
     polynomialVariable,
 
-    -- Inspection
+    -- * Inspection
     polynomialCoefficients,
     polynomialCoefficientAt,
     polynomialConstantTerm,
@@ -15,7 +19,7 @@ module GFComb.Polynomial
     polynomialLeadingCoefficient,
     polynomialIsZero,
 
-    -- Arithmetic
+    -- * Arithmetic
     polynomialAdd,
     polynomialSub,
     polynomialNegate,
@@ -23,10 +27,10 @@ module GFComb.Polynomial
     polynomialMul,
     polynomialPow,
 
-    -- Other operations
+    -- * Other operations
     polynomialEvaluate,
 
-    -- Root-finding
+    -- * Root-finding
     polynomialFindRationalRoot,
     polynomialExtractRationalRoots,
     polynomialDivideByLinearRoot
@@ -40,10 +44,17 @@ import Numeric.Natural (Natural)
 -- Polynomial type
 --------------------
 
+-- | A finite polynomial with rational coefficients, stored in ascending
+-- order of degree with no trailing zero coefficients (so the empty list
+-- represents the zero polynomial, and every other polynomial's last
+-- coefficient is its nonzero leading coefficient).
 newtype Polynomial = Polynomial [Rational]
   deriving (Eq)
 
 
+-- | Displays a polynomial as a standard mathematical expression, e.g.
+-- @2x^2 - x + 1@, with zero-coefficient terms omitted and the constant
+-- polynomial 0 shown as the single character 0.
 instance Show Polynomial where
   show (Polynomial coefficients) =
     case nonZeroTerms of
@@ -81,7 +92,8 @@ instance Show Polynomial where
         | denominator value == 1 = show (numerator value)
         | otherwise = "("++ show (numerator value) ++ "/" ++ show (denominator value) ++ ")"
 
--- Arithmetic syntax for polynomials.
+-- | Arithmetic syntax for polynomials. 'abs' and 'signum' have no
+-- sensible meaning for a polynomial and are left undefined.
 instance Num Polynomial where
   (+) = polynomialAdd
   (-) = polynomialSub
@@ -97,20 +109,24 @@ instance Num Polynomial where
 -- Construction
 ------------------------------------
 
+-- | Construct a polynomial from its coefficients in ascending order of
+-- degree. Trailing zero coefficients are dropped, so two lists that
+-- differ only by trailing zeros produce the same polynomial.
 --
--- produce the same polynomial.
+-- >>> map numerator (polynomialCoefficients (polynomialFromList [1, 2, 0, 3, 0, 0]))
+-- [1,2,0,3]
 polynomialFromList :: [Rational] -> Polynomial
 polynomialFromList = Polynomial . normalizeCoefficients
 
--- The zero polynomial.
+-- | The zero polynomial.
 polynomialZero :: Polynomial
 polynomialZero = Polynomial []
 
--- The constant polynomial one.
+-- | The constant polynomial one.
 polynomialOne :: Polynomial
 polynomialOne = Polynomial [1]
 
--- The polynomial representing the variable x.
+-- | The polynomial representing the variable x.
 polynomialVariable :: Polynomial
 polynomialVariable = Polynomial [0, 1]
 
@@ -118,13 +134,13 @@ polynomialVariable = Polynomial [0, 1]
 -- Inspection
 --------------------------------------------------------------------------------
 
--- Return the normalized finite coefficient list.
+-- | Return the normalized finite coefficient list.
 --
 -- The coefficients are returned in ascending order of degree.
 polynomialCoefficients :: Polynomial -> [Rational]
 polynomialCoefficients (Polynomial coefficients) = coefficients
 
--- The coefficient of degree 'index' in a polynomial, or 0 beyond its
+-- | The coefficient of degree 'index' in a polynomial, or 0 beyond its
 -- degree (similar to how a GF behaves, since Polynomial's own coefficient
 -- list is normalized to drop trailing zeros).
 polynomialCoefficientAt :: Polynomial -> Int -> Rational
@@ -134,20 +150,20 @@ polynomialCoefficientAt polynomial index
       (coefficient : _) -> coefficient
       [] -> 0
 
--- Return the degree of a polynomial.
+-- | Return the degree of a polynomial.
 --
 -- The zero polynomial has no mathematically defined degree, so this function
 -- returns 'Nothing' for zero.
 --
--- 
--- polynomialDegree (polynomialFromList [1, 2, 3]) == Just 2
--- polynomialDegree polynomialZero                  == Nothing
--- 
+-- >>> polynomialDegree (polynomialFromList [1, 2, 3])
+-- Just 2
+-- >>> polynomialDegree polynomialZero
+-- Nothing
 polynomialDegree :: Polynomial -> Maybe Int
 polynomialDegree (Polynomial []) = Nothing
 polynomialDegree (Polynomial coefficients) = Just (length coefficients - 1)
 
--- Return the leading coefficient.
+-- | Return the leading coefficient.
 --
 -- The zero polynomial has no leading coefficient.
 polynomialLeadingCoefficient :: Polynomial -> Maybe Rational
@@ -155,12 +171,13 @@ polynomialLeadingCoefficient (Polynomial []) = Nothing
 polynomialLeadingCoefficient (Polynomial coefficients) = Just (last coefficients)
 
 
+-- | A polynomial's constant term, i.e. its coefficient of x^0.
 polynomialConstantTerm :: Polynomial -> Rational
 polynomialConstantTerm (Polynomial []) = 0
 polynomialConstantTerm (Polynomial (constant : _)) = constant
 
 
--- Test whether a polynomial is the zero polynomial.
+-- | Test whether a polynomial is the zero polynomial.
 polynomialIsZero :: Polynomial -> Bool
 polynomialIsZero (Polynomial coefficients) = null coefficients
 
@@ -168,34 +185,39 @@ polynomialIsZero (Polynomial coefficients) = null coefficients
 -- Arithmetic
 ----------------------
 
--- Add two polynomials coefficient by coefficient.
+-- | Add two polynomials coefficient by coefficient.
+--
+-- >>> map numerator (polynomialCoefficients (polynomialAdd (polynomialFromList [1, 2]) (polynomialFromList [10, 20, 30])))
+-- [11,22,30]
 polynomialAdd :: Polynomial -> Polynomial -> Polynomial
 polynomialAdd
   (Polynomial coefficientsA)
   (Polynomial coefficientsB) =
     polynomialFromList (zipWithLonger (+) coefficientsA coefficientsB)
 
--- Subtract one polynomial from another coefficient by coefficient.
+-- | Subtract one polynomial from another coefficient by coefficient.
 polynomialSub :: Polynomial -> Polynomial -> Polynomial
 polynomialSub
   (Polynomial coefficientsA)
   (Polynomial coefficientsB) =
     polynomialFromList (zipWithLonger (-) coefficientsA coefficientsB)
 
--- Negate every coefficient.
+-- | Negate every coefficient.
 polynomialNegate :: Polynomial -> Polynomial
 polynomialNegate (Polynomial coefficients) = Polynomial (map negate coefficients)
 
--- Multiply every coefficient by a rational scalar.
+-- | Multiply every coefficient by a rational scalar.
 polynomialScale :: Rational -> Polynomial -> Polynomial
 polynomialScale scalar _
   | scalar == 0 = polynomialZero
 polynomialScale scalar (Polynomial coefficients) =
   polynomialFromList (map (scalar *) coefficients)
 
--- Multiply two polynomials using the Cauchy product.
+-- | Multiply two polynomials using the Cauchy product: the coefficient
+-- of degree n is @sum_{i=0}^n a_i * b_{n-i}@.
 --
-
+-- >>> map numerator (polynomialCoefficients (polynomialMul (polynomialFromList [1, 1]) (polynomialFromList [1, 1])))
+-- [1,2,1]
 polynomialMul :: Polynomial -> Polynomial -> Polynomial
 polynomialMul polynomialA polynomialB
   | polynomialIsZero polynomialA = polynomialZero
@@ -217,8 +239,8 @@ polynomialMul
           sliceB = drop lowB (take (degree + 1) coefficientsB)
 
 
--- Raise a polynomial to a non-negative integer power.
--- Exponentiation by squaring is used.
+-- | Raise a polynomial to a non-negative integer power, by repeated
+-- squaring.
 polynomialPow :: Polynomial -> Natural -> Polynomial
 polynomialPow _ 0 = polynomialOne
 polynomialPow polynomial 1 = polynomial
@@ -233,11 +255,12 @@ polynomialPow polynomial power
 ----------------------
 -- Evaluation
 ----------------------
--- Evaluate a polynomial at a rational value.
+-- | Evaluate a polynomial at a rational value, via Horner's method:
+-- @a_0 + x*(a_1 + x*(a_2 + ...))@, so each coefficient is used exactly
+-- once and no intermediate power of x is computed separately.
 --
--- Horner's method:
---
-
+-- >>> numerator (polynomialEvaluate (polynomialFromList [1, 2, 3]) 2)
+-- 17
 polynomialEvaluate :: Polynomial -> Rational -> Rational
 polynomialEvaluate (Polynomial coefficients) value =
     foldr (\coefficient acc -> coefficient + value * acc) 0 coefficients
@@ -246,9 +269,8 @@ polynomialEvaluate (Polynomial coefficients) value =
 -- Helpers
 ----------------------
 
--- Remove trailing zeros from a coefficient list.
---
-
+-- Remove trailing zeros from a coefficient list, so that two lists
+-- differing only by trailing zeros normalize to the same result.
 normalizeCoefficients :: [Rational] -> [Rational]
 normalizeCoefficients = reverse . dropWhile (== 0) . reverse
 
@@ -266,18 +288,20 @@ zipWithLonger operation (x : xs) (y : ys) = operation x y : zipWithLonger operat
 -- Root-finding
 ----------------------
 
--- Find one rational root of a polynomial with rational coefficients, via
+-- | Find one rational root of a polynomial with rational coefficients, via
 -- the rational root theorem.
 --
 -- If the constant term is zero, 0 is a root and is returned immediately.
 -- Otherwise the polynomial is scaled to integer coefficients (multiplying
 -- all coefficients by the lcm of the coefficients' denominators (this changes
--- nothing about where the roots are)), and candidates p/q are formed from
+-- nothing about where the roots are)), and candidates p\/q are formed from
 -- divisors p of the resulting constant term and divisors q of the
 -- resulting leading coefficient, then tested directly by evaluation. (fastest way to check)
 --
 -- Returns Nothing if the polynomial is zero, constant, or has no rational root.
-
+--
+-- >>> fmap numerator (polynomialFindRationalRoot (polynomialFromList [-1, 0, 1]))
+-- Just 1
 polynomialFindRationalRoot :: Polynomial -> Maybe Rational
 polynomialFindRationalRoot polynomial =
   case polynomialDegree polynomial of
@@ -314,7 +338,7 @@ divisorsOf :: Integer -> [Integer]
 divisorsOf 0 = [1]
 divisorsOf n = [d | d <- [1 .. n], n `mod` d == 0]
 
--- Repeatedly extract rational roots (via the rational root theorem) until
+-- | Repeatedly extract rational roots (via the rational root theorem) until
 -- none remain, returning the list of roots found - in the order
 -- extracted, with a root of multiplicity k appearing k times - together
 -- with whatever polynomial remains after dividing them all out.
@@ -327,12 +351,11 @@ polynomialExtractRationalRoots polynomial =
           (moreRoots, remaining) = polynomialExtractRationalRoots reduced
        in (root : moreRoots, remaining)
 
--- Divide a polynomial by (x - r).
+-- | Divide a polynomial by (x - r).
 --
 -- This assumes r is an exact root of the polynomial (as produced by
--- polynomialFindRationalRoot); the remainder of the division is not
+-- 'polynomialFindRationalRoot'); the remainder of the division is not
 -- checked. Using an r that is not an exact root will produce a meaningless result.
-
 polynomialDivideByLinearRoot :: Polynomial -> Rational -> Polynomial
 polynomialDivideByLinearRoot polynomial root =
   case reverse (polynomialCoefficients polynomial) of
@@ -341,16 +364,3 @@ polynomialDivideByLinearRoot polynomial root =
       let syntSteps = scanl (\acc c -> c + root*acc) leadingCoefficient remainingDescending
           quotientDescending = init syntSteps
        in polynomialFromList (reverse quotientDescending)
-
-
-
-
-
-
-
-
-
-
-
-
-
