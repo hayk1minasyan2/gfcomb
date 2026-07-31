@@ -42,6 +42,8 @@ import GFComb.Polynomial
 import GFComb.RationalGF ( RationalGF, rationalGF, rationalGFToGF)
 
 import Data.List (foldl', intercalate, tails)
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio (numerator, denominator, (%))
 
 ------------------------------
@@ -425,7 +427,7 @@ quadraticSurdRoots quadratic =
         root2 = surdDiv (surdSub negB sqrtDiscriminant) twoA
     _ -> Left "internal error: expected a quadratic leftover factor"
 
-    
+
 hasDuplicateRoot :: [Surd] -> Bool
 hasDuplicateRoot roots =
   or [ root == laterRoot | (root : laterRoots) <- tails roots, laterRoot <- laterRoots ]
