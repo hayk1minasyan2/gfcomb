@@ -1,7 +1,6 @@
 module GFComb.Recurrence
     ( -- Types
         LinearRecurrence,
-        RecurrenceError (..),
 
         -- Construction
         linearRecurrence,
@@ -64,34 +63,30 @@ import Data.Ratio (numerator, denominator, (%))
 --
 -- [c1, c2, ..., c_k].
 --
--- The constructor is hidden from users of the module. Valid recurrence values
--- must be created with 'linearRecurrence'.
-data LinearRecurrence = LinearRecurrence
-    { recurrenceCoefficients :: [Rational],
-      recurrenceInitialValues :: [Rational]
-    }
-    deriving (Eq, Show)
-
--------------------
--- Errors
----------------------
-
--- Errors that may occur while constructing a linear recurrence.
-data RecurrenceError = EmptyRecurrenceCoefficients | InitialValueCountMismatch
-        { expectedInitialValueCount :: Int,
-            actualInitialValueCount :: Int
-        }
+-- Pairing the coefficients and initial values together, one list instead
+-- of two, means a recurrence's coefficients and initial values are
+-- always exactly the same length by construction, and there is always at
+-- least one of each (thanks to 'Data.List.NonEmpty'). This is what lets
+-- 'linearRecurrence' below be a total function: the two ways
+-- construction used to fail at runtime (an empty recurrence, or a
+-- coefficient/initial-value count mismatch) are now ruled out by the
+-- type of its argument instead of checked afterwards.
+--
+-- The constructor is hidden from users of the module. Valid recurrence
+-- values must be created with 'linearRecurrence'.
+newtype LinearRecurrence = LinearRecurrence (NonEmpty (Rational, Rational))
     deriving (Eq, Show)
 
 --------------------------
 -- Construction
 -------------------------------
 
--- Construct a homogeneous linear recurrence with constant coefficients.
+-- Construct a homogeneous linear recurrence with constant coefficients,
+-- from a non-empty list of (coefficient, initial value) pairs.
 --
 -- For example:
 --
--- linearRecurrence [1, 1] [1, 1]
+-- linearRecurrence ((1, 1) :| [(1, 1)])
 --
 -- represents
 --
@@ -99,30 +94,30 @@ data RecurrenceError = EmptyRecurrenceCoefficients | InitialValueCountMismatch
 -- a_0 = 1,
 -- a_1 = 1.
 -- 
+-- Because the coefficients and initial values are given together, one
+-- per pair, this can no longer be called with mismatched lengths or with
+-- no coefficients at all, so (unlike the previous, two-separate-list version) this can
+-- no longer fail.
 
-linearRecurrence :: [Rational] -> [Rational] -> Either RecurrenceError LinearRecurrence
-linearRecurrence coefficients initialValues
-    | null coefficients = Left EmptyRecurrenceCoefficients
-    | actualCount /= expectedCount = Left InitialValueCountMismatch
-            { expectedInitialValueCount = expectedCount,
-                actualInitialValueCount = actualCount
-            }
-    | otherwise = Right LinearRecurrence
-            { recurrenceCoefficients = coefficients,
-                recurrenceInitialValues = initialValues
-            }
-    where
-        expectedCount = length coefficients
-        actualCount = length initialValues
-
+linearRecurrence :: NonEmpty (Rational, Rational) -> LinearRecurrence
+linearRecurrence = LinearRecurrence
+ 
 -------------------
 -- Inspection
 -----------------------
-
+ 
+-- The coefficients [c1, c2, ..., ck].
+recurrenceCoefficients :: LinearRecurrence -> [Rational]
+recurrenceCoefficients (LinearRecurrence pairs) = map fst (NonEmpty.toList pairs)
+ 
+-- The initial values [a_0, a_1, ..., a_(k-1)].
+recurrenceInitialValues :: LinearRecurrence -> [Rational]
+recurrenceInitialValues (LinearRecurrence pairs) = map snd (NonEmpty.toList pairs)
+ 
 -- Return the order of the recurrence.
 recurrenceOrder :: LinearRecurrence -> Int
 recurrenceOrder recurrence = length (recurrenceCoefficients recurrence)
-
+ 
 ----------------------------------------
 -- Generating-function construction
 -------------------------------------
