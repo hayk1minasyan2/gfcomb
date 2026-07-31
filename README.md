@@ -68,6 +68,37 @@ Generating function: (1 - sqrt(1 - 4x)) / (2x)
 First 10 coefficients: [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
 ```
 
+## Using GFComb as a library
+
+GFComb is a library first, with the REPL built on top of it — everything the REPL can do is also available as plain Haskell functions.
+
+```haskell
+import Data.List.NonEmpty ((:|))
+import Data.Ratio (numerator)
+import GFComb.Core (gfAdd, gfMul, gfOne, gfTake, gfVariable)
+import GFComb.Recurrence (linearRecurrence, recurrenceTerms)
+
+main :: IO ()
+main = do
+  -- Work with formal power series directly: (1+x)^2 = 1 + 2x + x^2
+  let x = gfVariable
+  print (map numerator (gfTake 5 (gfMul (gfAdd gfOne x) (gfAdd gfOne x))))
+  -- [1,2,1,0,0]
+
+  -- Or build a generating function from a linear recurrence
+  let fibonacciRecurrence = linearRecurrence ((1, 1) :| [(1, 1)])
+  print (map numerator (recurrenceTerms 10 fibonacciRecurrence))
+  -- [1,1,2,3,5,8,13,21,34,55]
+```
+
+(`numerator` is used above purely for cleaner console output — every coefficient here happens to be a whole number, so `numerator` recovers it as a plain `Integer`; the underlying values are exact `Rational`s throughout.)
+
+Some other useful entry points:
+
+* `GFComb.Polynomial` — finite polynomial arithmetic and rational-root finding, independent of the infinite-series machinery in `Core`.
+* `GFComb.AlgebraicGF` — solve a combinatorial specification given as an `Expr` (e.g. `Add (Lit 1) (Mul X (Pow Y 2))` for `C = 1 + x*C^2`) via `solveEquation`, `lagrangeCoefficients`, or `algebraicClosedForm`.
+* `GFComb.Builtins` — the predefined generating functions (`fibonacci`, `catalan`, `binaryTrees`, `ternaryTrees`, `partitions`) as ready-made `BuiltinGF` values.
+
 ## Project structure
 
 ```
