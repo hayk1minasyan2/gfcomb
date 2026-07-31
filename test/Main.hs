@@ -506,10 +506,10 @@ testCatalanViaSelfReference =
   assertEqual
     "Catalan numbers via self-referential gfShift definition"
     [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
-    (gfTake 10 catalan)
+    (gfTake 10 catalan_)
   where
-    catalan :: GF
-    catalan = gfAdd gfOne (gfShift 1 (gfMul catalan catalan))
+    catalan_ :: GF
+    catalan_ = gfAdd gfOne (gfShift 1 (gfMul catalan_ catalan_))
 
 testGfSqrtWithSeed :: IO ()
 testGfSqrtWithSeed = do
