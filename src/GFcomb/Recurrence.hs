@@ -41,7 +41,7 @@ import GFComb.Polynomial
     )
 import GFComb.RationalGF ( RationalGF, rationalGF, rationalGFToGF)
 
-import Data.List (foldl', intercalate)
+import Data.List (foldl', intercalate, tails)
 import Data.Ratio (numerator, denominator, (%))
 
 ------------------------------
@@ -156,15 +156,15 @@ recurrenceDenominator recurrence =
 -- 
 recurrenceNumerator :: LinearRecurrence -> Polynomial
 recurrenceNumerator recurrence =
-    polynomialFromList [ numeratorCoefficient degree | degree <- [0 .. order - 1]]
+    polynomialFromList  [ numeratorCoefficient degree initialValue | 
+                          (degree, initialValue) <- zip [0 ..] initialValues ]
     where
         coefficients = recurrenceCoefficients recurrence
         initialValues =  recurrenceInitialValues recurrence
-        order = recurrenceOrder recurrence
-
-        numeratorCoefficient :: Int -> Rational
-        numeratorCoefficient degree =
-            initialValues !! degree - sum ( zipWith (*) (take degree coefficients) (reverse (take degree initialValues)))
+ 
+        numeratorCoefficient :: Int -> Rational -> Rational
+        numeratorCoefficient degree initialValue =
+            initialValue - sum ( zipWith (*) (take degree coefficients) (reverse (take degree initialValues)))
 
 -- Construct the rational generating function associated with a recurrence.
 recurrenceRationalGF :: LinearRecurrence -> RationalGF
@@ -363,8 +363,12 @@ recurrenceClosedForm recurrence =
       | hasDuplicateRoot roots ->
           NoClosedForm "the characteristic polynomial has a repeated root (closed form would need an n * r^n term, which is not supported)"
       | otherwise ->
-          ClosedForm [ ClosedFormTerm (partialFractionCoefficient numeratorPolynomial roots index)
-                                      (roots !! index) | index <- [0 .. length roots - 1]]
+          ClosedForm
+            [ ClosedFormTerm
+                (partialFractionCoefficient numeratorPolynomial root (take index roots ++ drop (index + 1) roots))
+                root
+              | (index, root) <- zip [0 :: Int ..] roots
+            ]
   where
     numeratorPolynomial = recurrenceNumerator recurrence
 
@@ -421,23 +425,24 @@ quadraticSurdRoots quadratic =
         root2 = surdDiv (surdSub negB sqrtDiscriminant) twoA
     _ -> Left "internal error: expected a quadratic leftover factor"
 
+    
 hasDuplicateRoot :: [Surd] -> Bool
 hasDuplicateRoot roots =
-  or [ (roots !! i) == (roots !! j) | i <- [0 .. length roots - 1], j <- [i + 1 .. length roots - 1] ]
-
+  or [ root == laterRoot | (root : laterRoots) <- tails roots, laterRoot <- laterRoots ]
+ 
 -- The partial-fraction residue A_i = P(1/r_i) / product_{j /= i} (1 - r_j/r_i),
 -- so that A(x) = sum_i A_i / (1 - r_i*x) and hence a(n) = sum_i A_i * r_i^n.
-partialFractionCoefficient :: Polynomial -> [Surd] -> Int -> Surd
-partialFractionCoefficient numeratorPolynomial roots index =
+partialFractionCoefficient :: Polynomial -> Surd -> [Surd] -> Surd
+partialFractionCoefficient numeratorPolynomial root otherRoots =
   surdDiv numeratorAtReciprocalRoot denominatorProduct
   where
-    root = roots !! index
     reciprocalRoot = surdRecip root
     numeratorAtReciprocalRoot = evaluatePolynomialAtSurd numeratorPolynomial reciprocalRoot
-    otherRoots = [ roots !! j | j <- [0 .. length roots - 1], j /= index ]
-    denominatorProduct = foldl' surdMul
-                                (surdFromRational 1)
-                                [ surdSub (surdFromRational 1) (surdMul otherRoot reciprocalRoot) | otherRoot <- otherRoots]
+    denominatorProduct =
+      foldl'
+        surdMul
+        (surdFromRational 1)
+        [ surdSub (surdFromRational 1) (surdMul otherRoot reciprocalRoot) | otherRoot <- otherRoots ]
 
 -- Evaluate a polynomial with rational coefficients at a Surd, with Horner's
 -- method (same as GFComb.Polynomial.polynomialEvaluate, generalized to the
