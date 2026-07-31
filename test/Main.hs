@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Control.Monad (unless)
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import GFComb.Core
 import GFComb.Polynomial
 import GFComb.Conversion
@@ -32,7 +33,6 @@ main = do
 
   testRationalGFConversion
 
-  testRecurrenceValidation
   testRecurrenceGeneratingFunction
   testRecurrenceTerms
   testThirdOrderRecurrence
@@ -58,7 +58,7 @@ main = do
   testLagrangeInversionCustomCubic
   testLagrangeInversionMatchesMixedEquation
   testAsLagrangeFormRefusesHigherXPower
-  
+
   testAlgebraicClosedFormCatalan
   testAlgebraicClosedFormBranchSelection
   testAlgebraicClosedFormRejectsWrongY0
@@ -340,126 +340,82 @@ testRationalGFConversion = do
         "1 - x"
         (show result)
 
-testRecurrenceValidation :: IO ()
-testRecurrenceValidation = do
-  case linearRecurrence [] [] of
-    Left EmptyRecurrenceCoefficients ->
-      pure ()
-
-    Left otherError -> do
-      putStrLn "FAILED: empty recurrence coefficients"
-      putStrLn ("  Unexpected error: " ++ show otherError)
-      exitFailure
-
-    Right _ -> do
-      putStrLn "FAILED: empty recurrence coefficients were accepted"
-      exitFailure
-
-  case linearRecurrence [1, 1] [1] of
-    Left
-      InitialValueCountMismatch
-        { expectedInitialValueCount = 2,
-          actualInitialValueCount = 1} ->
-        pure ()
-
-    Left otherError -> do
-      putStrLn "FAILED: incorrect initial-value count"
-      putStrLn ("  Unexpected error: " ++ show otherError)
-      exitFailure
-
-    Right _ -> do
-      putStrLn "FAILED: incorrect initial-value count was accepted"
-      exitFailure
-
-
 testRecurrenceGeneratingFunction :: IO ()
-testRecurrenceGeneratingFunction =
-  case linearRecurrence [1, 1] [1, 2] of
-    Left err -> do
-      putStrLn ("FAILED: recurrence construction returned " ++ show err)
-      exitFailure
+testRecurrenceGeneratingFunction = do
+  let recurrence = linearRecurrence ((1, 1) :| [(1, 2)])
 
-    Right recurrence -> do
-      assertEqual
-        "recurrence order"
-        2
-        (recurrenceOrder recurrence)
+  assertEqual
+    "recurrence order"
+    2
+    (recurrenceOrder recurrence)
 
-      assertEqual
-        "recurrence coefficients"
-        [1, 1]
-        (recurrenceCoefficients recurrence)
+  assertEqual
+    "recurrence coefficients"
+    [1, 1]
+    (recurrenceCoefficients recurrence)
 
-      assertEqual
-        "recurrence initial values"
-        [1, 2]
-        (recurrenceInitialValues recurrence)
+  assertEqual
+    "recurrence initial values"
+    [1, 2]
+    (recurrenceInitialValues recurrence)
 
-      assertEqual
-        "recurrence numerator"
-        [1, 1]
-        (polynomialCoefficients (recurrenceNumerator recurrence))
+  assertEqual
+    "recurrence numerator"
+    [1, 1]
+    (polynomialCoefficients (recurrenceNumerator recurrence))
 
-      assertEqual
-        "recurrence denominator"
-        [1, -1, -1]
-        (polynomialCoefficients (recurrenceDenominator recurrence))
+  assertEqual
+    "recurrence denominator"
+    [1, -1, -1]
+    (polynomialCoefficients (recurrenceDenominator recurrence))
 
-      assertEqual
-        "recurrence rational GF"
-        "(1 + x) / (1 - x - x^2)"
-        (show (recurrenceRationalGF recurrence))
+  assertEqual
+    "recurrence rational GF"
+    "(1 + x) / (1 - x - x^2)"
+    (show (recurrenceRationalGF recurrence))
 
 testRecurrenceTerms :: IO ()
-testRecurrenceTerms =
-  case linearRecurrence [1, 1] [1, 1] of
-    Left err -> do
-      putStrLn ("FAILED: Fibonacci recurrence returned " ++ show err)
-      exitFailure
+testRecurrenceTerms = do
+  let recurrence = linearRecurrence ((1, 1) :| [(1, 1)])
 
-    Right recurrence -> do
-      assertEqual
-        "Fibonacci recurrence terms"
-        [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
-        (recurrenceTerms 10 recurrence)
+  assertEqual
+    "Fibonacci recurrence terms"
+    [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
+    (recurrenceTerms 10 recurrence)
 
-      assertEqual
-        "Fibonacci term at index 9"
-        (Just 55)
-        (recurrenceTermAt 9 recurrence)
+  assertEqual
+    "Fibonacci term at index 9"
+    (Just 55)
+    (recurrenceTermAt 9 recurrence)
 
-      assertEqual
-        "negative recurrence term index"
-        Nothing
-        (recurrenceTermAt (-1) recurrence)
+  assertEqual
+    "negative recurrence term index"
+    Nothing
+    (recurrenceTermAt (-1) recurrence)
 
-      assertEqual
-        "non-positive recurrence term count"
-        []
-        (recurrenceTerms 0 recurrence)
+  assertEqual
+    "non-positive recurrence term count"
+    []
+    (recurrenceTerms 0 recurrence)
 
 testThirdOrderRecurrence :: IO ()
-testThirdOrderRecurrence =
-  case linearRecurrence [1, 1, 1] [0, 0, 1] of
-    Left err -> do
-      putStrLn ("FAILED: third-order recurrence returned " ++ show err)
-      exitFailure
+testThirdOrderRecurrence = do
+  let recurrence = linearRecurrence ((1, 0) :| [(1, 0), (1, 1)])
 
-    Right recurrence -> do
-      assertEqual
-        "third-order recurrence numerator"
-        [0, 0, 1]
-        (polynomialCoefficients (recurrenceNumerator recurrence))
+  assertEqual
+    "third-order recurrence numerator"
+    [0, 0, 1]
+    (polynomialCoefficients (recurrenceNumerator recurrence))
 
-      assertEqual
-        "third-order recurrence denominator"
-        [1, -1, -1, -1]
-        (polynomialCoefficients (recurrenceDenominator recurrence))
+  assertEqual
+    "third-order recurrence denominator"
+    [1, -1, -1, -1]
+    (polynomialCoefficients (recurrenceDenominator recurrence))
 
-      assertEqual
-        "third-order recurrence terms"
-        [0, 0, 1, 1, 2, 4, 7, 13]
-        (recurrenceTerms 8 recurrence)
+  assertEqual
+    "third-order recurrence terms"
+    [0, 0, 1, 1, 2, 4, 7, 13]
+    (recurrenceTerms 8 recurrence)
 
 
 testBuiltins :: IO ()
@@ -501,12 +457,12 @@ testBuiltins = do
     "Catalan built-in coefficients"
     [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
     (gfTake 10 (builtinGeneratingFunction catalan))
- 
+
   assertEqual
     "binaryTrees built-in has the same coefficients as catalan (both satisfy C = 1 + x*C^2)"
     (gfTake 10 (builtinGeneratingFunction catalan))
     (gfTake 10 (builtinGeneratingFunction binaryTrees))
- 
+
   assertEqual
     "catalan and binaryTrees are distinct entries despite sharing coefficients"
     False
@@ -521,11 +477,12 @@ testBuiltins = do
     "partitions built-in coefficients"
     [1, 1, 2, 3, 5, 7, 11, 15, 22, 30]
     (gfTake 10 (builtinGeneratingFunction partitions))
- 
+
   assertEqual
-    "allBuiltins has five entries"
+    "allBuiltins now has five entries"
     5
     (length allBuiltins)
+
 
 testGfShift :: IO ()
 testGfShift = do
@@ -549,10 +506,10 @@ testCatalanViaSelfReference =
   assertEqual
     "Catalan numbers via self-referential gfShift definition"
     [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
-    (gfTake 10 catalan_)
+    (gfTake 10 catalan)
   where
-    catalan_ :: GF
-    catalan_ = gfAdd gfOne (gfShift 1 (gfMul catalan_ catalan_))
+    catalan :: GF
+    catalan = gfAdd gfOne (gfShift 1 (gfMul catalan catalan))
 
 testGfSqrtWithSeed :: IO ()
 testGfSqrtWithSeed = do
@@ -658,6 +615,10 @@ testCatalanClosedFormMatchesSelfReference =
 
 -- Check that a closed form agrees with 'recurrenceTermAt' for every n from
 -- 0 up to (and including) maxN, one at a time.
+--
+-- This is a plain recursive loop, the same shape as e.g. 'divisorsOf' or
+-- 'findFirstRoot' elsewhere in the project: the first guard is the base
+-- case (stop once n has gone past maxN), the second guard is the
 -- recursive case (check the current n, then move on to n + 1).
 checkClosedFormAgreesWithRecurrence :: String -> LinearRecurrence -> ClosedFormResult -> Int -> Int -> IO ()
 checkClosedFormAgreesWithRecurrence label recurrence closedForm n maxN
@@ -675,68 +636,54 @@ checkClosedFormAgreesWithRecurrence label recurrence closedForm n maxN
 -- exact printed form is checked against the hand-derived value
 -- ( phi/sqrt(5) and -psi/sqrt(5), written out as (5 +- sqrt(5))/10 ).
 testRecurrenceClosedFormFibonacci :: IO ()
-testRecurrenceClosedFormFibonacci =
-  case linearRecurrence [1, 1] [1, 1] of
-    Left err -> do
-      putStrLn ("FAILED: Fibonacci recurrence returned " ++ show err)
+testRecurrenceClosedFormFibonacci = do
+  let recurrence = linearRecurrence ((1, 1) :| [(1, 1)])
+      closedForm = recurrenceClosedForm recurrence
+
+  case closedForm of
+    NoClosedForm reason -> do
+      putStrLn ("FAILED: expected a closed form for Fibonacci, got: " ++ reason)
       exitFailure
+    ClosedForm terms ->
+      assertEqual "Fibonacci closed form has two terms" 2 (length terms)
 
-    Right recurrence -> do
-      let closedForm = recurrenceClosedForm recurrence
+  checkClosedFormAgreesWithRecurrence "Fibonacci closed form" recurrence closedForm 0 20
 
-      case closedForm of
-        NoClosedForm reason -> do
-          putStrLn ("FAILED: expected a closed form for Fibonacci, got: " ++ reason)
-          exitFailure
-        ClosedForm terms ->
-          assertEqual "Fibonacci closed form has two terms" 2 (length terms)
-
-      checkClosedFormAgreesWithRecurrence "Fibonacci closed form" recurrence closedForm 0 20
-
-      assertEqual
-        "Fibonacci closed form display"
-        "a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*sqrt(5)) * (1/2 - 1/2*sqrt(5))^n"
-        (showClosedForm closedForm)
+  assertEqual
+    "Fibonacci closed form display"
+    "a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*sqrt(5)) * (1/2 - 1/2*sqrt(5))^n"
+    (showClosedForm closedForm)
 
 -- a_n = 6 a_(n-1) - 11 a_(n-2) + 6 a_(n-3), with a_n = 1^n + 2^n + 3^n,
 -- whose characteristic polynomial y^3 - 6y^2 + 11y - 6 factors completely
 -- into three rational roots (1, 2, 3) -- exercises the "no quadratic
 -- factor needed at all" path, and a recurrence of order higher than 2.
 testRecurrenceClosedFormAllRationalRoots :: IO ()
-testRecurrenceClosedFormAllRationalRoots =
-  case linearRecurrence [6, -11, 6] [3, 6, 14] of
-    Left err -> do
-      putStrLn ("FAILED: order-3 all-rational-root recurrence returned " ++ show err)
+testRecurrenceClosedFormAllRationalRoots = do
+  let recurrence = linearRecurrence ((6, 3) :| [(-11, 6), (6, 14)])
+      closedForm = recurrenceClosedForm recurrence
+
+  case closedForm of
+    NoClosedForm reason -> do
+      putStrLn ("FAILED: expected a closed form, got: " ++ reason)
       exitFailure
+    ClosedForm terms ->
+      assertEqual "order-3 closed form has three terms" 3 (length terms)
 
-    Right recurrence -> do
-      let closedForm = recurrenceClosedForm recurrence
-
-      case closedForm of
-        NoClosedForm reason -> do
-          putStrLn ("FAILED: expected a closed form, got: " ++ reason)
-          exitFailure
-        ClosedForm terms ->
-          assertEqual "order-3 closed form has three terms" 3 (length terms)
-
-      checkClosedFormAgreesWithRecurrence "order-3 closed form" recurrence closedForm 0 15
+  checkClosedFormAgreesWithRecurrence "order-3 closed form" recurrence closedForm 0 15
 
 -- a_n = -a_(n-2) has characteristic roots +-i (complex), so no real closed
 -- form exists in this system; it must be reported as such, not crash or
 -- silently return a wrong answer.
 testRecurrenceClosedFormComplexRootsUnavailable :: IO ()
 testRecurrenceClosedFormComplexRootsUnavailable =
-  case linearRecurrence [0, -1] [1, 0] of
-    Left err -> do
-      putStrLn ("FAILED: complex-root recurrence returned " ++ show err)
+  case recurrenceClosedForm recurrence of
+    NoClosedForm _ -> pure ()
+    ClosedForm terms -> do
+      putStrLn ("FAILED: expected no closed form for a complex-root recurrence, got: " ++ show terms)
       exitFailure
-
-    Right recurrence ->
-      case recurrenceClosedForm recurrence of
-        NoClosedForm _ -> pure ()
-        ClosedForm terms -> do
-          putStrLn ("FAILED: expected no closed form for a complex-root recurrence, got: " ++ show terms)
-          exitFailure
+  where
+    recurrence = linearRecurrence ((0, 1) :| [(-1, 0)])
 
 -- a_n = 4 a_(n-1) - 4 a_(n-2) has a repeated characteristic root (2, with
 -- multiplicity 2), which needs an n * 2^n term this module doesn't
@@ -744,25 +691,20 @@ testRecurrenceClosedFormComplexRootsUnavailable =
 -- wrong.
 testRecurrenceClosedFormRepeatedRootUnavailable :: IO ()
 testRecurrenceClosedFormRepeatedRootUnavailable =
-  case linearRecurrence [4, -4] [1, 4] of
-    Left err -> do
-      putStrLn ("FAILED: repeated-root recurrence returned " ++ show err)
+  case recurrenceClosedForm recurrence of
+    NoClosedForm _ -> pure ()
+    ClosedForm terms -> do
+      putStrLn ("FAILED: expected no closed form for a repeated-root recurrence, got: " ++ show terms)
       exitFailure
+  where
+    recurrence = linearRecurrence ((4, 1) :| [(-4, 4)])
 
-    Right recurrence ->
-      case recurrenceClosedForm recurrence of
-        NoClosedForm _ -> pure ()
-        ClosedForm terms -> do
-          putStrLn ("FAILED: expected no closed form for a repeated-root recurrence, got: " ++ show terms)
-          exitFailure
-
- 
-------------------------------------
+----------------------------------------
 -- AlgebraicGF: guarded self-reference and Lagrange inversion
--------------------------------------
- 
+----------------------------------------
+
 -- Catalan numbers via the general guarded solver, driven by a parsed-style
--- Expr rather than hand-written Haskell self-reference. This is the same
+-- Expr rather than hand-written Haskell self-reference -- this is the same
 -- equation as 'testCatalanViaSelfReference' above, so it's also a check
 -- that 'solveEquation' agrees with the hand-written definition.
 testSolveEquationCatalan :: IO ()
@@ -771,10 +713,10 @@ testSolveEquationCatalan =
     "Catalan numbers via solveEquation (Y = 1 + x*Y^2)"
     [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
     (gfTake 10 (solveEquation catalanEquation))
- 
+
 -- The equation for ternary trees, Y = 1 + x*Y^3: a cubic equation, which
--- 'solveEquation' should handle exactly as Catalan's quadratic one, 
--- since the guarded self-reference technique doesn't care about the
+-- 'solveEquation' should handle exactly as readily as Catalan's quadratic
+-- one, since the guarded self-reference technique doesn't care about the
 -- degree of phi.
 testSolveEquationTernaryTrees :: IO ()
 testSolveEquationTernaryTrees =
@@ -782,13 +724,13 @@ testSolveEquationTernaryTrees =
     "ternary trees via solveEquation (Y = 1 + x*Y^3)"
     [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
     (gfTake 10 (solveEquation ternaryTreesEquation))
- 
+
 catalanEquation :: Expr
 catalanEquation = Add (Lit 1) (Mul X (Pow Y 2))
- 
+
 ternaryTreesEquation :: Expr
 ternaryTreesEquation = Add (Lit 1) (Mul X (Pow Y 3))
- 
+
 -- Lagrange inversion should recognise Catalan's equation as being of the
 -- form Y = c + x*phi(Y), and its coefficients should agree exactly with
 -- the guarded solver's (two independent algorithms, same answer).
@@ -803,8 +745,8 @@ testLagrangeInversionMatchesCatalan =
         "Catalan numbers via Lagrange inversion"
         [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
         (lagrangeCoefficients c phi 10)
- 
--- Same cross-check for ternary trees. Lagrange inversion handles phi of
+
+-- Same cross-check for ternary trees: Lagrange inversion handles phi of
 -- any degree just as well as the guarded solver does.
 testLagrangeInversionMatchesTernaryTrees :: IO ()
 testLagrangeInversionMatchesTernaryTrees =
@@ -817,7 +759,7 @@ testLagrangeInversionMatchesTernaryTrees =
         "ternary trees via Lagrange inversion"
         [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
         (lagrangeCoefficients c phi 10)
- 
+
 -- A custom equation with no additive constant (c = 0) and a mixed
 -- quadratic-and-cubic phi, Y = x*(1 + Y^2 + Y^3), checked both ways:
 -- against the guarded solver directly, and via Lagrange inversion.
@@ -825,12 +767,12 @@ testLagrangeInversionCustomCubic :: IO ()
 testLagrangeInversionCustomCubic = do
   let equation = Mul X (Add (Add (Lit 1) (Pow Y 2)) (Pow Y 3))
       expected = [0, 1, 0, 1, 1, 2, 5, 8, 21, 42]
- 
+
   assertEqual
     "Y = x*(1 + Y^2 + Y^3) via solveEquation"
     expected
     (gfTake 10 (solveEquation equation))
- 
+
   case asLagrangeForm equation of
     Nothing -> do
       putStrLn "FAILED: expected Y = x*(1 + Y^2 + Y^3) to be recognised as Lagrange-invertible"
@@ -840,24 +782,24 @@ testLagrangeInversionCustomCubic = do
         "Y = x*(1 + Y^2 + Y^3) via Lagrange inversion"
         expected
         (lagrangeCoefficients c phi 10)
- 
+
 -- Y = 1 + x*Y + x*Y^2 has two separate x*(...) terms, added together
 -- rather than already combined into one x*(...) node. 'asLagrangeForm'
 -- must notice that x can still be factored out of both of them together
--- (x*Y + x*Y^2 = x*(Y + Y^2)), giving c = 1, phi = Y + Y^2 (not just
+-- (x*Y + x*Y^2 = x*(Y + Y^2)), giving c = 1, phi = Y + Y^2 -- not just
 -- recognise equations that already have a single x*(...) term written
--- out). The resulting coefficients are checked against 'solveEquation',
+-- out. The resulting coefficients are checked against 'solveEquation',
 -- which has no such shape restriction and computes them independently.
 testLagrangeInversionMatchesMixedEquation :: IO ()
 testLagrangeInversionMatchesMixedEquation = do
   let equation = Add (Add (Lit 1) (Mul X Y)) (Mul X (Pow Y 2))
       expected = [1, 2, 6, 22, 90, 394, 1806, 8558, 41586, 206098]
- 
+
   assertEqual
     "Y = 1 + x*Y + x*Y^2 via solveEquation"
     expected
     (gfTake 10 (solveEquation equation))
- 
+
   case asLagrangeForm equation of
     Nothing -> do
       putStrLn "FAILED: expected Y = 1 + x*Y + x*Y^2 to be recognised as Lagrange-invertible (x can be factored out of both x*(...) terms together)"
@@ -867,76 +809,76 @@ testLagrangeInversionMatchesMixedEquation = do
         "Y = 1 + x*Y + x*Y^2 via Lagrange inversion"
         expected
         (lagrangeCoefficients c phi 10)
- 
--- Y = 1 + x^2*Y has x to the second power in its only non-constant
+
+-- Y = 1 + x^2*Y has x to the *second* power in its only non-constant
 -- term, not the first, so it is genuinely not of the Y = c + x*phi(Y)
 -- shape (there is no way to factor out a single x and leave phi free of
 -- x). 'asLagrangeForm' must still refuse this, while 'solveEquation'
--- computes its coefficients [1, 0, 1, 0, ...] (= 1/(1-x^2)).
+-- computes its coefficients [1, 0, 1, 0, ...] (= 1/(1-x^2)) regardless.
 testAsLagrangeFormRefusesHigherXPower :: IO ()
 testAsLagrangeFormRefusesHigherXPower = do
   let equation = Add (Lit 1) (Mul (Pow X 2) Y)
- 
+
   case asLagrangeForm equation of
     Nothing -> pure ()
     Just result -> do
       putStrLn ("FAILED: expected Y = 1 + x^2*Y to be refused by asLagrangeForm, got: " ++ show result)
       exitFailure
- 
+
   assertEqual
     "Y = 1 + x^2*Y via solveEquation"
     [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
     (gfTake 10 (solveEquation equation))
 
-
--------------------
+----------------------------------------
 -- Closed form for equations quadratic in the unknown
---------------------
- 
+----------------------------------------
+
 -- Catalan's equation is quadratic in Y (Y = 1 + x*Y^2), so this checks
 -- 'algebraicClosedForm' against both the known Catalan sequence and
--- 'solveEquation'.
+-- 'solveEquation' -- two independent algorithms (quadratic formula vs.
+-- guarded self-reference) agreeing is a strong correctness check.
 testAlgebraicClosedFormCatalan :: IO ()
 testAlgebraicClosedFormCatalan =
   case algebraicClosedForm catalanEquation 1 of
     Left err -> do
       putStrLn ("FAILED: Catalan via algebraicClosedForm returned " ++ err)
       exitFailure
- 
+
     Right closedFormCatalan -> do
       assertEqual
         "Catalan via algebraicClosedForm"
         [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
         (gfTake 10 closedFormCatalan)
- 
+
       assertEqual
         "Catalan via algebraicClosedForm matches solveEquation"
         (gfTake 15 (solveEquation catalanEquation))
         (gfTake 15 closedFormCatalan)
- 
+
 -- Y = x - x*Y + Y^2 (equivalently Y^2 - (1+x)*Y + x = 0) has two
 -- perfectly good rational-function roots, Y = 1 and Y = x, with a
--- denominator (2*a(x) = 2) that never vanishes. Unlike Catalan,
--- there is no removable singularity forcing one branch. The caller's
+-- denominator (2*a(x) = 2) that never vanishes -- so, unlike Catalan,
+-- there is no removable singularity forcing one branch; the caller's
 -- expected Y(0) genuinely determines which of the two roots comes back.
 testAlgebraicClosedFormBranchSelection :: IO ()
 testAlgebraicClosedFormBranchSelection = do
   let equation = Add (Sub X (Mul X Y)) (Pow Y 2)
- 
+
   case algebraicClosedForm equation 1 of
     Left err -> do
       putStrLn ("FAILED: expected the Y(0)=1 branch to succeed, got " ++ err)
       exitFailure
     Right root ->
       assertEqual "Y(0) = 1 branch is the constant series 1" [1, 0, 0, 0, 0] (gfTake 5 root)
- 
+
   case algebraicClosedForm equation 0 of
     Left err -> do
       putStrLn ("FAILED: expected the Y(0)=0 branch to succeed, got " ++ err)
       exitFailure
     Right root ->
       assertEqual "Y(0) = 0 branch is the series x" [0, 1, 0, 0, 0] (gfTake 5 root)
- 
+
 -- A Y(0) that doesn't actually satisfy the equation at x = 0 (Catalan
 -- numbers do not start at 2) must be rejected outright, not silently
 -- produce a series that doesn't match the recurrence.
@@ -947,7 +889,7 @@ testAlgebraicClosedFormRejectsWrongY0 =
     Right result -> do
       putStrLn ("FAILED: expected Y(0)=2 to be rejected for Catalan's equation, got: " ++ show (gfTake 5 result))
       exitFailure
- 
+
 -- Ternary trees' equation (Y = 1 + x*Y^3) has no Y^2 term at all, so it
 -- is not of the quadratic shape and 'asQuadraticInY' must refuse it.
 testAsQuadraticInYRefusesNonQuadratic :: IO ()
