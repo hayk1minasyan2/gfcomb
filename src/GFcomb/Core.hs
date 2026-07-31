@@ -1,11 +1,15 @@
+-- | Formal power series over the rationals: construction, coefficient
+-- access, arithmetic, calculus, composition, and a handful of series
+-- (formal square roots, the generalized binomial series) that come up
+-- repeatedly when working with combinatorial generating functions.
 module GFComb.Core
-  ( -- Generating functions
+  ( -- * Generating functions
     GF,
 
-    -- Errors
+    -- * Errors
     GFError (..),
 
-    -- Construction
+    -- * Construction
     gfFromList,
     gfFromCoefficients,
     gfConstant,
@@ -13,14 +17,14 @@ module GFComb.Core
     gfOne,
     gfVariable,
 
-    -- Coefficient access
+    -- * Coefficient access
     gfCoefficients,
     gfConstantTerm,
     gfCoeffAt,
     gfCoeffAtMaybe,
     gfTake,
 
-    -- Basic arithmetic
+    -- * Basic arithmetic
     gfAdd,
     gfSub,
     gfNegate,
@@ -28,21 +32,21 @@ module GFComb.Core
     gfMul,
     gfPow,
 
-    -- Formal power-series operations
+    -- * Formal power-series operations
     gfDivide,
     gfReciprocal,
     gfDerivative,
     gfIntegral,
     gfCompose,
 
-    -- Structural / non-forcing operations
+    -- * Structural / non-forcing operations
     gfShift,
 
-    -- Square roots and generalized binomial series
+    -- * Square roots and generalized binomial series
     gfSqrtWithSeed,
     generalizedBinomial,
 
-    -- Comparison
+    -- * Comparison
     gfEqualUpTo
   )
 where
@@ -53,29 +57,39 @@ import Data.Ratio (denominator, numerator)
 import Numeric.Natural (Natural)
 
 
--- A formal power series over the rationals.
--- A(x) = a_0 + a_1*x + a_2*x^2 + ... is represented as GF [a_0, a_1, a_2, ...]
+-- | A formal power series over the rationals.
+-- A(x) = a_0 + a_1*x + a_2*x^2 + ... is represented as @GF [a_0, a_1, a_2, ...]@.
 -- Examples:
---   GF [1, 2, 3, 0, 0, ...] represents 1 + 2x + 3x^2
---   GF [1, 1, 1, 1, ...] represents 1/(1-x) (geometric series)
+--
+--   * @GF [1, 2, 3, 0, 0, ...]@ represents 1 + 2x + 3x^2
+--   * @GF [1, 1, 1, 1, ...]@ represents 1\/(1-x) (geometric series)
 
 newtype GF = GF [Rational]
 
 ---------------------------------------------------------------------
 
--- Errors that may occur while manipulating formal power series.
+-- | Errors that may occur while manipulating formal power series.
 data GFError
   = DivisionByZeroConstant
+    -- ^ Attempted to divide by a series whose constant term is 0.
   | CompositionRequiresZeroConstant Rational
+    -- ^ Attempted composition where the inner series' constant term
+    -- (carried along for the error message) was not 0; composition only
+    -- makes sense when the inner series has no constant term.
   | InvalidSqrtSeed
       { sqrtSeedGiven :: Rational,
+        -- ^ The seed the caller supplied.
         sqrtSeedTargetConstantTerm :: Rational
+        -- ^ The series' actual constant term, which the seed's square
+        -- must equal.
       }
+    -- ^ Attempted 'gfSqrtWithSeed' with a seed that was zero, or whose
+    -- square did not equal the target series' constant term.
     deriving (Eq, Show)
 
 --------------------------------------------------------------------
 
--- Displaying a GF by showing the first 10 coefficients
+-- | Displaying a GF by showing the first 10 coefficients
 instance Show GF where
   show gf = "GF ["
                 ++ intercalate ", " (map showCoeff (gfTake 10 gf))
@@ -92,7 +106,9 @@ instance Fractional GF where
       Left err -> error ("cannot invert formal power series: " ++ show err)
       Right result -> result
 
--- I am making GF a Num instance so that we can use +, -, * syntax
+-- | 'GF' is a 'Num' instance so that we can use +, -, * syntax. 'abs' and
+-- 'signum' have no sensible meaning for a formal power series and are
+-- left undefined.
 instance Num GF where
   (+) = gfAdd
   (-) = gfSub
@@ -109,22 +125,28 @@ instance Num GF where
 ------------------
 
 
+-- | Construct a formal power series from a finite list of coefficients,
+-- implicitly padded with an infinite tail of zeros.
 gfFromCoefficients :: [Rational] -> GF
 gfFromCoefficients coefficients = GF (coefficients ++ repeat 0)
 
+-- | An alias for 'gfFromCoefficients'.
 gfFromList :: [Rational] -> GF
 gfFromList = gfFromCoefficients
 
--- Construct a constant formal power series.
+-- | Construct a constant formal power series.
 gfConstant :: Rational -> GF
 gfConstant constant = GF (constant : repeat 0)
 
+-- | The zero series.
 gfZero :: GF
 gfZero = gfConstant 0
 
+-- | The constant series 1.
 gfOne :: GF
 gfOne = gfConstant 1
 
+-- | The series for x itself: @0 + 1*x + 0*x^2 + ...@.
 gfVariable :: GF
 gfVariable = GF (0 : 1 : repeat 0)
 
@@ -132,15 +154,19 @@ gfVariable = GF (0 : 1 : repeat 0)
 -- Coefficient access
 ---------------------------
 
+-- | The (infinite) list of a series' coefficients.
 gfCoefficients :: GF -> [Rational]
 gfCoefficients (GF coefficients) = coefficients
 
+-- | A series' constant term, i.e. its coefficient of x^0.
 gfConstantTerm :: GF -> Rational
 gfConstantTerm (GF coefficients) = case coefficients of
         constant : _ -> constant
         [] ->   error "GF invariant violated: empty coefficient list"
 
 
+-- | The coefficient at a given (non-negative) index. Errors on a
+-- negative index; see 'gfCoeffAtMaybe' for a total version.
 gfCoeffAt :: GF -> Int -> Rational
 gfCoeffAt gf index =
   case gfCoeffAtMaybe gf index of
@@ -148,12 +174,15 @@ gfCoeffAt gf index =
     Just coefficient -> coefficient
 
 
+-- | The coefficient at a given index, or 'Nothing' for a negative index.
 gfCoeffAtMaybe :: GF -> Int -> Maybe Rational
 gfCoeffAtMaybe _ index
   | index < 0 = Nothing
 gfCoeffAtMaybe (GF coefficients) index = Just (coefficients !! index)
 
 
+-- | The first @count@ coefficients of a series, as a finite list. A
+-- non-positive count produces an empty list.
 gfTake :: Int -> GF -> [Rational]
 gfTake count _
   | count <= 0 = []
@@ -164,19 +193,19 @@ gfTake count (GF coefficients) =
 -- Basic operations on GFs
 -- ----------
 
--- Addition: Adding two generating functions termwise
+-- | Addition: Adding two generating functions termwise
 -- (A + B)[n] = a_n + b_n
 gfAdd :: GF -> GF -> GF
 gfAdd (GF as) (GF bs) = GF (zipWith (+) as bs)
 
 
--- Subtraction: Subtracting two generating functions termwise
+-- | Subtraction: Subtracting two generating functions termwise
 -- (A - B)[n] = a_n - b_n
 gfSub :: GF -> GF -> GF
 gfSub (GF as) (GF bs) = GF (zipWith (-) as bs)
 
 
--- Multiplication: The coefficient of x^n in the product A * B is given by the convolution of the coefficients:
+-- | Multiplication: The coefficient of x^n in the product A * B is given by the convolution of the coefficients:
 -- (A * B)[n] = sum_{i=0}^n a_i * b_{n-i}
 -- Instead we can use Cauchy's product: A(x)B(x)=a0*​B(x) + x*(A_Tail​(x) * B(x)).
 gfMul :: GF -> GF -> GF
@@ -188,15 +217,16 @@ gfMul (GF (a0 : as)) (GF bs@(b0 : bsTail)) =
     remainingCoefficients = zipWith (+) (map (a0 *) bsTail) recursiveProduct
     GF recursiveProduct =  gfMul (GF as) (GF bs)
 
--- Termwise negation.
+-- | Termwise negation.
 gfNegate :: GF -> GF
 gfNegate (GF coefficients) = GF (map negate coefficients)
 
 
--- Multiply each coefficient by a scalar.
+-- | Multiply each coefficient by a scalar.
 gfScale :: Rational -> GF -> GF
 gfScale scalar (GF coefficients) = GF (map (scalar *) coefficients)
 
+-- | Raise a series to a natural-number power, by repeated squaring.
 gfPow :: GF -> Natural -> GF
 gfPow _ 0 = gfOne
 gfPow gf 1 = gf
@@ -207,8 +237,9 @@ gfPow gf power
   | otherwise =
       gf * gfPow gf (power - 1)
 
--- Division
-
+-- | Divide one series by another, failing if the divisor's constant
+-- term is 0 (the only case in which formal power series division is
+-- undefined).
 gfDivide :: GF -> GF -> Either GFError GF
 gfDivide dividend divisor
   | gfConstantTerm divisor == 0 = Left DivisionByZeroConstant
@@ -229,6 +260,7 @@ gfDivideUnsafe (GF dividendCoefficients) (GF divisorCoefficients) =
           remainderTail = zipWith (-) dividendTail (map (quotientConstant *) divisorTail)
 
 
+-- | The multiplicative inverse of a series, i.e. @gfDivide gfOne@.
 gfReciprocal :: GF -> Either GFError GF
 gfReciprocal = gfDivide gfOne
 
@@ -237,7 +269,7 @@ gfReciprocal = gfDivide gfOne
 -- Calculus
 ----------------------------------------
 
--- Derivative: Formal derivative of a generating function
+-- | Derivative: Formal derivative of a generating function
 -- 
 -- If A(x) = a_0 + a_1*x + a_2*x^2 + a_3*x^3 + ...
 -- Then A'(x) = a_1 + 2*a_2*x + 3*a_3*x^2 + ...
@@ -246,15 +278,15 @@ gfDerivative :: GF -> GF
 gfDerivative (GF []) = gfZero
 gfDerivative (GF (_ : remainingCoefficients)) = GF ( zipWith (*) (map fromInteger [1 ..]) remainingCoefficients)
 
+-- | Formal antiderivative of a series, with constant term 0.
 gfIntegral :: GF -> GF
 gfIntegral (GF coefficients) = GF ( 0 : zipWith (/) coefficients  (map fromInteger [1 ..]))
 
--- Internal composition function used after validating the inner constant term.
+-- | Compose two series, A(B(x)), failing unless B's constant term is 0
+-- (required for the composition to be well-defined as a formal power
+-- series). Once validated, delegates to the recursive identity
 --
--- It uses the recursive identity
---
--- A(B(x)) = a_0 + B(x)A_{tail}(B(x)).
---
+-- > A(B(x)) = a_0 + B(x)*A_tail(B(x)).
 gfCompose :: GF -> GF -> Either GFError GF
 gfCompose outer inner
   | innerConstant /= 0 = Left (CompositionRequiresZeroConstant innerConstant)
@@ -278,7 +310,7 @@ gfComposeUnsafe (GF outerCoefficients) inner = GF [ coefficientAt degree | degre
 -- Structural operations
 ----------------------------------------
 
--- Multiply a formal power series by x^k, for a non-negative k.
+-- | Multiply a formal power series by x^k, for a non-negative k.
 --
 -- Unlike 'gfMul gf (gfVariable ^ k)', this is a pure list operation, and the benefit is that it
 -- simply prepends k zero coefficients and does not perform any arithmetic on the
@@ -295,7 +327,7 @@ gfComposeUnsafe (GF outerCoefficients) inner = GF [ coefficientAt degree | degre
 -- does not terminate: to find c's own first coefficient, Haskell must force
 -- gfVariable's first coefficient (0) times (c*c)'s first coefficient, and
 -- forcing that product forces c's first coefficient again - the very thing
--- being computed. Using gfShift instead of "gfMul gfVariable" avoids the
+-- being computed. Using gfShift instead of \"gfMul gfVariable\" avoids the
 -- problem , because prepending a zero never inspects the existing
 -- coefficients:
 --
@@ -310,19 +342,19 @@ gfShift k (GF coefficients) = GF (replicate k 0 ++ coefficients)
 -- Square roots
 ----------------------------------------
 
--- Formal power series square root, computed one coefficient at a time.
+-- | Formal power series square root, computed one coefficient at a time.
 --
--- Given a series A and a chosen rational square root 's' of A's constant
+-- Given a series A and a chosen rational square root @s@ of A's constant
 -- term (there are always two candidates, s and -s and the caller picks one),
 -- returns the unique series R with R(0) = s and R * R = A.
 --
 -- From R * R = A, comparing coefficients of x^n gives
 --
---   R[0] = s
---   R[n] = ( A[n] - sum_{i=1}^{n-1} R[i] * R[n-i] ) / (2 * R[0])   for n >= 1
+-- > R[0] = s
+-- > R[n] = ( A[n] - sum_{i=1}^{n-1} R[i] * R[n-i] ) / (2 * R[0])   for n >= 1
 --
 -- Each R[n] depends only on strictly smaller-indexed coefficients of R, so
--- (as with gfShift above) this can be written as a direct, well-founded
+-- (as with 'gfShift' above) this can be written as a direct, well-founded
 -- self-reference and evaluated lazily, coefficient by coefficient. This is
 -- the formal-power-series square root recurrence. It is the same
 -- fixed-point idea behind Newton's method for R^2 - A = 0, specialised to
@@ -351,20 +383,20 @@ gfSqrtWithSeed seed a_x
 -- Generalized binomial series
 ----------------------------------------
 
--- The generalized binomial series (1 + x)^r, for a rational exponent r.
+-- | The generalized binomial series (1 + x)^r, for a rational exponent r.
 --
 -- The n-th coefficient is the generalized binomial coefficient
 --
---   C(r, n) = r (r-1) (r-2) ... (r-n+1) / n!
+-- > C(r, n) = r (r-1) (r-2) ... (r-n+1) / n!
 --
--- computed via the recurrence C(r,0) = 1, C(r,n+1) = C(r,n) * (r-n) / (n+1).
+-- computed via the recurrence C(r,0) = 1, C(r,n+1) = C(r,n) * (r-n) \/ (n+1).
 --
--- Composing this with a series u where u(0) = 0 (via gfCompose) computes
+-- Composing this with a series u where u(0) = 0 (via 'gfCompose') computes
 -- (1+u)^r for any such u; in particular this gives an independent way to
 -- compute square roots of series of the form 1 + c*x, and is the tool
--- referred to as the "generalized binomial formula" for extracting
+-- referred to as the \"generalized binomial formula\" for extracting
 -- explicit coefficients from algebraic generating functions such as
--- (1 - sqrt(1 - 4x)) / (2x). (see lecture "Dvořák, Z. (2026). *KG1 Notes* (Combinatorics 1 lecture notes). Charles University.")
+-- (1 - sqrt(1 - 4x)) \/ (2x). (see lecture \"Dvořák, Z. (2026). *KG1 Notes* (Combinatorics 1 lecture notes). Charles University.\")
 generalizedBinomial :: Rational -> GF
 generalizedBinomial r = GF (coefficientsFrom 0 1)
   where
@@ -378,5 +410,6 @@ generalizedBinomial r = GF (coefficientsFrom 0 1)
 -- Comparison
 --------------------
 
+-- | Whether two series agree on their first @count@ coefficients.
 gfEqualUpTo :: Int -> GF -> GF -> Bool
 gfEqualUpTo count gfA gfB = gfTake count gfA == gfTake count gfB
