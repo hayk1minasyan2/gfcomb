@@ -44,6 +44,7 @@ import GFComb.Polynomial
     polynomialSub,
     polynomialVariable
   )
+import Numeric.Natural (Natural)
 
 -------------------------------------
 -- Equations -> Y = RightHandSide, for an unknown generating function Y
@@ -61,7 +62,7 @@ data Expr = X |
             Add Expr Expr | 
             Sub Expr Expr | 
             Mul Expr Expr | 
-            Pow Expr Int
+            Pow Expr Natural
   deriving (Eq, Show)
 
 -------------------------
@@ -90,14 +91,14 @@ evalExpr (Mul a b) y =
       case xPower b of
         Just k -> gfShift k (evalExpr a y)
         Nothing -> gfMul (evalExpr a y) (evalExpr b y)
-evalExpr (Pow a n) y = gfPow (evalExpr a y) (fromIntegral n)
+evalExpr (Pow a n) y = gfPow (evalExpr a y) n
 
 -- Recognise an expression that is exactly a power of x (x itself, or
 -- x^n), with no other content, so that multiplying by it can become a
 -- 'gfShift' instead of a 'gfMul'.
 xPower :: Expr -> Maybe Int
 xPower X = Just 1
-xPower (Pow X n) = Just n
+xPower (Pow X n) = Just (fromIntegral n)
 xPower _ = Nothing
 
 ------------------------------------------------------
@@ -208,7 +209,7 @@ xDegreeAndRemainder :: Expr -> Maybe (Int, Expr)
 xDegreeAndRemainder X = Just (1, Lit 1)
 xDegreeAndRemainder Y = Just (0, Y)
 xDegreeAndRemainder (Lit c) = Just (0, Lit c)
-xDegreeAndRemainder (Pow X n) = Just (n, Lit 1)
+xDegreeAndRemainder (Pow X n) = Just (fromIntegral n, Lit 1)
 xDegreeAndRemainder (Pow base n)
   | containsX base = Nothing
   | otherwise = Just (0, Pow base n)
@@ -228,9 +229,7 @@ evalConstExpr (Lit c) = Just c
 evalConstExpr (Add a b) = (+) <$> evalConstExpr a <*> evalConstExpr b
 evalConstExpr (Sub a b) = (-) <$> evalConstExpr a <*> evalConstExpr b
 evalConstExpr (Mul a b) = (*) <$> evalConstExpr a <*> evalConstExpr b
-evalConstExpr (Pow a n)
-  | n < 0 = Nothing
-  | otherwise = (^ n) <$> evalConstExpr a
+evalConstExpr (Pow a n) = (^ n) <$> evalConstExpr a
 
 -- Evaluate an expression as a finite polynomial in a single variable,
 -- substituting the given polynomial for every occurrence of 'Y'. The
@@ -247,7 +246,7 @@ evalExprAsPolynomial (Lit c) _ = polynomialFromList [c]
 evalExprAsPolynomial (Add a b) argument = polynomialAdd (evalExprAsPolynomial a argument) (evalExprAsPolynomial b argument)
 evalExprAsPolynomial (Sub a b) argument = polynomialSub (evalExprAsPolynomial a argument) (evalExprAsPolynomial b argument)
 evalExprAsPolynomial (Mul a b) argument = polynomialMul (evalExprAsPolynomial a argument) (evalExprAsPolynomial b argument)
-evalExprAsPolynomial (Pow a n) argument = polynomialPow (evalExprAsPolynomial a argument) (fromIntegral n)
+evalExprAsPolynomial (Pow a n) argument = polynomialPow (evalExprAsPolynomial a argument) n
 
 -- The n-th coefficient of the solution to Y = c + x*phi(Y), via the
 -- Lagrange inversion formula.
@@ -351,7 +350,7 @@ yDegreeAndRemainder :: Expr -> Maybe (Int, Expr)
 yDegreeAndRemainder X = Just (0, X)
 yDegreeAndRemainder Y = Just (1, Lit 1)
 yDegreeAndRemainder (Lit c) = Just (0, Lit c)
-yDegreeAndRemainder (Pow Y n) = Just (n, Lit 1)
+yDegreeAndRemainder (Pow Y n) = Just (fromIntegral n, Lit 1)
 yDegreeAndRemainder (Pow base n)
   | containsY base = Nothing
   | otherwise = Just (0, Pow base n)
