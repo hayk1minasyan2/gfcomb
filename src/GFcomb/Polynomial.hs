@@ -209,14 +209,13 @@ polynomialMul
 
       coefficientAt :: Int -> Rational
       coefficientAt degree =
-        sum
-          [ coefficientA * coefficientB
-          | (indexA, coefficientA) <- zip [0 :: Int ..] coefficientsA,
-            let indexB = degree - indexA,
-            indexB >= 0,
-            indexB < length coefficientsB,
-            let coefficientB = coefficientsB !! indexB
-          ]
+        sum (zipWith (*) sliceA (reverse sliceB))
+        where
+          lowA = max 0 (degree - length coefficientsB + 1)
+          lowB = max 0 (degree - length coefficientsA + 1)
+          sliceA = drop lowA (take (degree + 1) coefficientsA)
+          sliceB = drop lowB (take (degree + 1) coefficientsB)
+
 
 -- Raise a polynomial to a non-negative integer power.
 -- Exponentiation by squaring is used.
