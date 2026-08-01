@@ -1,13 +1,15 @@
+-- | Predefined generating functions shipped with GFComb.
 module GFComb.Builtins
-  ( BuiltinGF,
+  ( -- * Built-in generating functions
+    BuiltinGF,
 
-    -- Inspection
+    -- * Inspection
     builtinName,
     builtinDescription,
     builtinSymbolicForm,
     builtinGeneratingFunction,
 
-    -- Available built-ins
+    -- * Available built-ins
     fibonacci,
     catalan,
     binaryTrees,
@@ -45,18 +47,23 @@ import GFComb.Recurrence
 -- Built-in generating functions
 ----------------------------------------
 
--- A named generating function included in the GFComb library.
+-- | A named generating function included in the GFComb library.
 --
 -- The constructor is hidden so that built-in entries can only be created inside this module.
-
 data BuiltinGF =
   BuiltinGF
     { builtinName :: String,
+      -- ^ The name used to look this entry up, e.g. with 'lookupBuiltin'.
       builtinDescription :: String,
+      -- ^ A short, human-readable description, e.g. the first several terms.
       builtinSymbolicForm :: String,
+      -- ^ The generating function written out symbolically, e.g.
+      -- @1 \/ (1 - x - x^2)@.
       builtinGeneratingFunction :: GF
+      -- ^ The generating function itself.
     }
 
+-- | Shows a built-in as @name: symbolicForm@.
 instance Show BuiltinGF where
   show builtin =
     builtinName builtin ++ ": " ++ builtinSymbolicForm builtin
@@ -65,16 +72,15 @@ instance Show BuiltinGF where
 -- Fibonacci numbers
 --------------------------------------------
 
--- The Fibonacci sequence
+-- | The Fibonacci sequence
 --
--- 1, 1, 2, 3, 5, 8, ...
+-- > 1, 1, 2, 3, 5, 8, ...
 --
--- satisfying
+-- satisfying @a_n = a_(n-1) + a_(n-2)@ with initial values @a_0 = 1@
+-- and @a_1 = 1@.
 --
--- a_n = a_(n-1) + a_(n-2)
---
--- with initial values a_0 = 1 and a_1 = 1.
-
+-- >>> builtinName fibonacci
+-- "fibonacci"
 fibonacci :: BuiltinGF
 fibonacci =
   BuiltinGF
@@ -116,6 +122,8 @@ catalanClosedForm =
     Left err -> error ("GFComb.Builtins: invalid internal Catalan equation: " ++ err)
     Right gf -> gf
  
+-- | Catalan numbers: @1, 1, 2, 5, 14, 42, ...@, satisfying
+-- @C = 1 + x*C^2@.
 catalan :: BuiltinGF
 catalan =
   BuiltinGF
@@ -124,8 +132,8 @@ catalan =
       builtinSymbolicForm = "(1 - sqrt(1 - 4x)) / (2x)",
       builtinGeneratingFunction = catalanClosedForm
     }
- 
--- Full binary trees (every internal node has exactly two children),
+
+-- | Full binary trees (every internal node has exactly two children),
 -- counted by number of internal nodes (the same sequence as 'catalan'),
 -- since they satisfy the identical equation. Kept as a separate entry,
 -- because the combinatorial meaning is different,
@@ -154,6 +162,9 @@ binaryTrees =
 ternaryTreesEquation :: Expr
 ternaryTreesEquation = Add (Lit 1) (Mul X (Pow Y 3))
  
+-- | Ternary trees by number of internal nodes: @1, 1, 3, 12, 55, 273, ...@,
+-- satisfying @T = 1 + x*T^3@. Cubic in T, so (per "GFComb.AlgebraicGF"'s
+-- scope) there is no closed form here, only coefficients.
 ternaryTrees :: BuiltinGF
 ternaryTrees =
   BuiltinGF
@@ -198,6 +209,11 @@ partitionCoefficientAt n = gfCoeffAt (productOfFactorsUpTo n) n
         Left err -> error ("GFComb.Builtins: invalid internal partitions factor: " ++ show err)
         Right gf -> gf
  
+-- | Integer partitions: @1, 1, 2, 3, 5, 7, 11, 15, 22, 30, ...@ -- the
+-- number of ways to write n as a sum of positive integers (order does
+-- not matter), via
+--
+-- > P(x) = product_{k=1}^infinity  1 / (1 - x^k)
 partitions :: BuiltinGF
 partitions =
   BuiltinGF
@@ -212,13 +228,19 @@ partitions =
 -- Collection and lookup
 -------------------------------
 
--- All predefined generating functions.
+-- | All predefined generating functions.
+--
+-- >>> length allBuiltins
+-- 5
 allBuiltins :: [BuiltinGF]
 allBuiltins = [fibonacci, catalan, binaryTrees, ternaryTrees, partitions]
 
--- Find a built-in generating function by name.
+-- | Find a built-in generating function by name.
 --
 -- Lookup is case-insensitive.
+--
+-- >>> fmap builtinName (lookupBuiltin "CATALAN")
+-- Just "catalan"
 lookupBuiltin :: String -> Maybe BuiltinGF
 lookupBuiltin requestedName = findByName allBuiltins
   where
