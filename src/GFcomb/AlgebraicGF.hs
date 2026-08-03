@@ -1,16 +1,20 @@
+-- | Combinatorial\/algebraic generating functions defined by a functional
+-- equation Y = rhs: solving for coefficients of any degree via guarded
+-- self-reference, explicit n-th coefficients via Lagrange inversion, and
+-- a closed form for equations quadratic in the unknown.
 module GFComb.AlgebraicGF
-  ( -- Equation representation
+  ( -- * Equation representation
     Expr (..),
 
-    -- Solving: coefficients via guarded self-reference
+    -- * Solving: coefficients via guarded self-reference
     solveEquation,
 
-    -- Lagrange inversion for Y = c + x*phi(Y)
+    -- * Lagrange inversion for Y = c + x*phi(Y)
     asLagrangeForm,
     lagrangeCoefficient,
     lagrangeCoefficients,
 
-    -- Closed form for equations quadratic in the unknown
+    -- * Closed form for equations quadratic in the unknown
     QuadraticInY (..),
     asQuadraticInY,
     algebraicClosedForm
@@ -49,13 +53,12 @@ import Numeric.Natural (Natural)
 -------------------------------------
 -- Equations -> Y = RightHandSide, for an unknown generating function Y
 ------------------------------------
--- An 'Expr' is the right-hand side of a combinatorial specification such
+-- | An 'Expr' is the right-hand side of a combinatorial specification such
 -- as Y = 1 + x*Y^2 (Catalan numbers) or Y = x*(1 + Y^2 + Y^3) (ternary
 -- trees). 'X' stands for the generating-function variable and 'Y' stands
 -- for the unknown being solved for; there is no separate representation
--- of the left-hand side "Y =", since every equation in this module is
+-- of the left-hand side \"Y =\", since every equation in this module is
 -- implicitly of that form.
-
 data Expr = X | 
             Y |
             Lit Rational | 
@@ -105,9 +108,9 @@ xPower _ = Nothing
 -- Solving Y = R.H.S. for coefficients, via guarded self-reference
 ------------------------------------------------------
 
--- Solve an equation Y = rhs for Y as a formal power series.
+-- | Solve an equation Y = rhs for Y as a formal power series.
 --
--- This works for any equation of the "guarded" form Y = phi(x, Y) where
+-- This works for any equation of the \"guarded\" form Y = phi(x, Y) where
 -- every occurrence of Y on the right is reached through at least one
 -- multiplication by x. This covers equations of any degree in Y: 
 -- Catalan numbers (Y = 1 + x*Y^2), ternary trees
@@ -117,6 +120,9 @@ xPower _ = Nothing
 -- Y appears with no x anywhere) will not terminate: producing 'rhs'
 -- from an already-guarded combinatorial specification is the caller's
 -- responsibility.
+--
+-- >>> take 5 (gfCoefficients (solveEquation (Add (Lit 1) (Mul X (Pow Y 2)))))
+-- [1 % 1,1 % 1,2 % 1,5 % 1,14 % 1]
 solveEquation :: Expr -> GF
 solveEquation rhs = fixedPoint
   where
@@ -136,13 +142,13 @@ containsX (Sub a b) = containsX a || containsX b
 containsX (Mul a b) = containsX a || containsX b
 containsX (Pow a _) = containsX a
 
--- Recognise an equation Y = R.H.S of the shape Y = c + x*phi(Y), where c is
+-- | Recognise an equation Y = R.H.S of the shape Y = c + x*phi(Y), where c is
 -- a rational constant and phi is a polynomial expression in Y alone (no
 -- x inside phi) : the shape Lagrange inversion applies to. c may be 0.
 --
 -- This works by fully expanding 'R.H.S.' into a flat sum of signed
 -- multiplicative terms: distributing every multiplication over every
--- addition/subtraction it touches, so e.g. x*(1 + Y^2 + Y^3) is treated
+-- addition\/subtraction it touches, so e.g. x*(1 + Y^2 + Y^3) is treated
 -- exactly the same as x + x*Y^2 + x*Y^3, and then classifying each term
 -- by how many factors of x it contains:
 --
@@ -159,7 +165,9 @@ containsX (Pow a _) = containsX a
 -- sum; c = 0, phi = 1 + Y^2 + Y^3) are recognised as the same shape.
 -- 'solveEquation' still computes the coefficients of equations this
 -- doesn't recognise, just without a Lagrange-inversion shortcut.
-
+--
+-- >>> fmap fst (asLagrangeForm (Add (Lit 1) (Mul X (Pow Y 2))))
+-- Just (1 % 1)
 asLagrangeForm :: Expr -> Maybe (Rational, Expr)
 asLagrangeForm rhs = do
   classifiedTerms <- mapM classifyTerm (expandedTerms rhs)
@@ -248,20 +256,19 @@ evalExprAsPolynomial (Sub a b) argument = polynomialSub (evalExprAsPolynomial a 
 evalExprAsPolynomial (Mul a b) argument = polynomialMul (evalExprAsPolynomial a argument) (evalExprAsPolynomial b argument)
 evalExprAsPolynomial (Pow a n) argument = polynomialPow (evalExprAsPolynomial a argument) n
 
--- The n-th coefficient of the solution to Y = c + x*phi(Y), via the
+-- | The n-th coefficient of the solution to Y = c + x*phi(Y), via the
 -- Lagrange inversion formula.
 --
 -- Writing D = Y - c, D satisfies D = x*psi(D) with psi(z) = phi(z + c),
 -- and Lagrange inversion gives
 --
---   d_0 = 0,   d_n = (1/n) * [x^(n-1)] psi(x)^n   for n >= 1
+-- > d_0 = 0,   d_n = (1/n) * [x^(n-1)] psi(x)^n   for n >= 1
 --
 -- with t_0 = c and t_n = d_n for n >= 1. psi(x)^n is a finite polynomial
 -- of degree n * degree(phi), computed with the already-tested
 -- 'polynomialPow' - this reads off a single coefficient of Y directly,
 -- without computing any of Y's other coefficients along the way, unlike
 -- 'solveEquation'.
-
 lagrangeCoefficient :: Rational -> Expr -> Int -> Rational
 lagrangeCoefficient c _ 0 = c
 lagrangeCoefficient _ _ n | n < 0 = 0
@@ -270,8 +277,11 @@ lagrangeCoefficient c phi n =
   where
     psi = evalExprAsPolynomial phi (polynomialAdd polynomialVariable (polynomialFromList [c]))
 
--- The first 'count' coefficients (n = 0, 1, ..., count - 1) of the
+-- | The first 'count' coefficients (n = 0, 1, ..., count - 1) of the
 -- solution to Y = c + x*phi(Y), via 'lagrangeCoefficient'.
+--
+-- >>> lagrangeCoefficients 1 (Pow Y 2) 5
+-- [1 % 1,1 % 1,2 % 1,5 % 1,14 % 1]
 lagrangeCoefficients :: Rational -> Expr -> Int -> [Rational]
 lagrangeCoefficients c phi count = [lagrangeCoefficient c phi n | n <- [0 .. count - 1]]
 
@@ -280,14 +290,16 @@ lagrangeCoefficients c phi count = [lagrangeCoefficient c phi n | n <- [0 .. cou
 -- Closed form for equations quadratic in the unknown
 -------------------------------------
  
--- The three coefficient expressions of a(x)*Y^2 + b(x)*Y + c(x) = 0,
+-- | The three coefficient expressions of a(x)*Y^2 + b(x)*Y + c(x) = 0,
 -- obtained by rearranging Y = R.H.S. None of quadA, quadB, quadC contain
--- 'Y' (they are the "coefficients", in x alone)
-
+-- 'Y' (they are the \"coefficients\", in x alone)
 data QuadraticInY = QuadraticInY
   { quadA :: Expr,
+    -- ^ The coefficient of Y^2, i.e. a(x).
     quadB :: Expr,
+    -- ^ The coefficient of Y, i.e. b(x).
     quadC :: Expr
+    -- ^ The constant term, i.e. c(x).
   }
   deriving (Eq, Show)
  
@@ -301,12 +313,12 @@ containsY (Sub a b) = containsY a || containsY b
 containsY (Mul a b) = containsY a || containsY b
 containsY (Pow a _) = containsY a
  
--- Recognise an equation Y = rhs as being quadratic in Y, i.e. rhs - Y can
+-- | Recognise an equation Y = rhs as being quadratic in Y, i.e. rhs - Y can
 -- be written as a(x)*Y^2 + b(x)*Y + c(x) for some x-only expressions
 -- a, b, c.
 --
 -- Like 'asLagrangeForm', this works by fully expanding rhs into signed
--- multiplicative terms (distributing Mul over Add/Sub via
+-- multiplicative terms (distributing Mul over Add\/Sub via
 -- 'expandedTerms') and classifying each term by its degree in Y (0, 1,
 -- or 2); a degree outside {0, 1, 2} means the equation isn't quadratic in
 -- Y and this returns 'Nothing' (this is out of the scope of the project.
@@ -319,7 +331,6 @@ containsY (Pow a _) = containsY a
 -- An equation with no Y^2 term at all (e.g. a plain linear equation) is
 -- not what this function is for, and also returns 'Nothing'.
 -- 'solveEquation' handles those directly.
-
 asQuadraticInY :: Expr -> Maybe QuadraticInY
 asQuadraticInY rhs = do
   classifiedTerms <- mapM classifyTerm (expandedTerms rhs)
@@ -361,10 +372,10 @@ yDegreeAndRemainder (Mul a b) = do
 yDegreeAndRemainder (Add _ _) = Nothing -- this is already handled by 'expandedTerms', and shouldn't occurre
 yDegreeAndRemainder (Sub _ _) = Nothing -- this is already handled by 'expandedTerms', and shouldn't occurre
  
--- Solve a(x)*Y^2 + b(x)*Y + c(x) = 0 for Y as a formal power series, via
+-- | Solve a(x)*Y^2 + b(x)*Y + c(x) = 0 for Y as a formal power series, via
 -- the quadratic formula
 --
---   Y = ( -b(x) +- sqrt(b(x)^2 - 4*a(x)*c(x)) ) / (2*a(x))
+-- > Y = ( -b(x) +- sqrt(b(x)^2 - 4*a(x)*c(x)) ) / (2*a(x))
 --
 -- given the caller's expected value of Y(0) (e.g. 1 for Catalan
 -- numbers, since C(0) = 1). This single expected value is enough to
@@ -388,6 +399,9 @@ yDegreeAndRemainder (Sub _ _) = Nothing -- this is already handled by 'expandedT
 -- singularity at x = 0 - both the numerator and denominator vanish together, 
 -- and the shared factor of x is taken out from each before dividing 
 -- so that the result is still a valid formal power series.
+--
+-- >>> fmap (take 5 . gfCoefficients) (algebraicClosedForm (Add (Lit 1) (Mul X (Pow Y 2))) 1)
+-- Right [1 % 1,1 % 1,2 % 1,5 % 1,14 % 1]
 algebraicClosedForm :: Expr -> Rational -> Either String GF
 algebraicClosedForm rhs expectedConstantTerm =
   case asQuadraticInY rhs of
@@ -449,4 +463,3 @@ divideRemovingCommonZero = go (0 :: Int)
 -- by 'divideRemovingCommonZero', which checks that itself.
 gfDivideByX :: GF -> GF
 gfDivideByX gf = gfFromCoefficients (tail (gfCoefficients gf))
- 
