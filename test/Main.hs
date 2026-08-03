@@ -1,6 +1,9 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main (main) where
 
 import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.Ratio ((%))
 import GFComb.Core
 import GFComb.Polynomial
 import GFComb.Conversion
@@ -10,6 +13,17 @@ import GFComb.AlgebraicGF
 import GFComb.Builtins
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertEqual, assertFailure, testCase)
+import Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+  ( Arbitrary (..),
+    Gen,
+    NonNegative (..),
+    Property,
+    forAll,
+    listOf,
+    suchThat,
+    (===)
+  )
 
 main :: IO ()
 main =
@@ -70,6 +84,20 @@ main =
             testAlgebraicClosedFormBranchSelection,
             testAlgebraicClosedFormRejectsWrongY0,
             testAsQuadraticInYRefusesNonQuadratic
+          ],
+        testGroup
+          "Property-based tests (QuickCheck)"
+          [ testGfAddCommutative,
+            testGfAddAssociative,
+            testGfMulCommutative,
+            testGfMulIdentity,
+            testGfAddIdentity,
+            testGfIntegralDerivative,
+            testPolynomialAddCommutative,
+            testPolynomialMulCommutative,
+            testPolynomialMulAssociative,
+            testPolynomialEvaluateDistributesOverAdd,
+            testOrder1ClosedFormMatchesTerm
           ]
       ]
 
@@ -822,3 +850,120 @@ testAsQuadraticInYRefusesNonQuadratic =
       Nothing -> pure ()
       Just result ->
         assertFailure ("expected ternary trees' equation to be refused by asQuadraticInY, got: " ++ show result)
+
+----------------------------------------
+-- Property-based tests (QuickCheck)
+----------------------------------------
+--
+-- The tests above are all example-based: given this specific input,
+-- expect exactly this specific output. These are property-based instead,
+-- general statements (e.g. "addition is commutative") that should hold
+-- for *any* valid input, checked against many randomly-generated inputs.
+
+genRational :: Gen Rational
+genRational = do
+  n <- arbitrary :: Gen Integer
+  d <- (arbitrary :: Gen Integer) `suchThat` (/= 0)
+  pure (n % d)
+
+instance Arbitrary GF where
+  arbitrary = do
+    coefficients <- listOf genRational
+    pure (gfFromList coefficients)
+
+instance Arbitrary Polynomial where
+  arbitrary = do
+    coefficients <- listOf genRational
+    pure (polynomialFromList coefficients)
+
+-- Compare only the first 20 coefficients, since GF has no (and can't
+-- have a well-defined) Eq instance of its own -- it wraps an infinite
+-- list, which can't be compared for equality in finite time.
+prop_gfAddCommutative :: GF -> GF -> Property
+prop_gfAddCommutative a b = gfTake 20 (gfAdd a b) === gfTake 20 (gfAdd b a)
+
+testGfAddCommutative :: TestTree
+testGfAddCommutative = testProperty "gfAdd is commutative" prop_gfAddCommutative
+
+prop_gfAddAssociative :: GF -> GF -> GF -> Property
+prop_gfAddAssociative a b c =
+  gfTake 20 (gfAdd (gfAdd a b) c) === gfTake 20 (gfAdd a (gfAdd b c))
+
+testGfAddAssociative :: TestTree
+testGfAddAssociative = testProperty "gfAdd is associative" prop_gfAddAssociative
+
+prop_gfMulCommutative :: GF -> GF -> Property
+prop_gfMulCommutative a b = gfTake 20 (gfMul a b) === gfTake 20 (gfMul b a)
+
+testGfMulCommutative :: TestTree
+testGfMulCommutative = testProperty "gfMul is commutative" prop_gfMulCommutative
+
+prop_gfMulIdentity :: GF -> Property
+prop_gfMulIdentity a = gfTake 20 (gfMul gfOne a) === gfTake 20 a
+
+testGfMulIdentity :: TestTree
+testGfMulIdentity = testProperty "gfOne is an identity for gfMul" prop_gfMulIdentity
+
+prop_gfAddIdentity :: GF -> Property
+prop_gfAddIdentity a = gfTake 20 (gfAdd gfZero a) === gfTake 20 a
+
+testGfAddIdentity :: TestTree
+testGfAddIdentity = testProperty "gfZero is an identity for gfAdd" prop_gfAddIdentity
+
+-- Integrating a series' derivative recovers the series with its constant
+-- term zeroed out (integration always reintroduces a constant term of 0,
+-- so the original constant term -- whatever it was -- can't survive the
+-- round trip).
+prop_gfIntegralDerivative :: GF -> Property
+prop_gfIntegralDerivative a =
+  gfTake 20 (gfIntegral (gfDerivative a))
+    === gfTake 20 (gfSub a (gfConstant (gfConstantTerm a)))
+
+testGfIntegralDerivative :: TestTree
+testGfIntegralDerivative =
+  testProperty "gfIntegral . gfDerivative recovers the non-constant part" prop_gfIntegralDerivative
+
+prop_polynomialAddCommutative :: Polynomial -> Polynomial -> Property
+prop_polynomialAddCommutative p q = polynomialAdd p q === polynomialAdd q p
+
+testPolynomialAddCommutative :: TestTree
+testPolynomialAddCommutative = testProperty "polynomialAdd is commutative" prop_polynomialAddCommutative
+
+prop_polynomialMulCommutative :: Polynomial -> Polynomial -> Property
+prop_polynomialMulCommutative p q = polynomialMul p q === polynomialMul q p
+
+testPolynomialMulCommutative :: TestTree
+testPolynomialMulCommutative = testProperty "polynomialMul is commutative" prop_polynomialMulCommutative
+
+prop_polynomialMulAssociative :: Polynomial -> Polynomial -> Polynomial -> Property
+prop_polynomialMulAssociative p q r =
+  polynomialMul (polynomialMul p q) r === polynomialMul p (polynomialMul q r)
+
+testPolynomialMulAssociative :: TestTree
+testPolynomialMulAssociative = testProperty "polynomialMul is associative" prop_polynomialMulAssociative
+
+prop_polynomialEvaluateDistributesOverAdd :: Polynomial -> Polynomial -> Property
+prop_polynomialEvaluateDistributesOverAdd p q =
+  forAll genRational $ \x ->
+    polynomialEvaluate (polynomialAdd p q) x === polynomialEvaluate p x + polynomialEvaluate q x
+
+testPolynomialEvaluateDistributesOverAdd :: TestTree
+testPolynomialEvaluateDistributesOverAdd =
+  testProperty
+    "polynomialEvaluate distributes over polynomialAdd"
+    prop_polynomialEvaluateDistributesOverAdd
+
+-- For any order-1 recurrence a_n = c*a_(n-1), a_0 = v
+-- (including c = 0), the closed form should match recurrenceTermAt.
+
+prop_order1ClosedFormMatchesTerm :: Rational -> Rational -> NonNegative Int -> Property
+prop_order1ClosedFormMatchesTerm c v (NonNegative n) =
+    let recurrence = linearRecurrence ((c, v) :| [])
+        closedForm = recurrenceClosedForm recurrence
+    in  closedFormValueAt closedForm n === recurrenceTermAt n recurrence
+
+testOrder1ClosedFormMatchesTerm :: TestTree
+testOrder1ClosedFormMatchesTerm =
+  testProperty
+    "order-1 recurrence closed form matches recurrenceTermAt (c /= 0)"
+    prop_order1ClosedFormMatchesTerm
