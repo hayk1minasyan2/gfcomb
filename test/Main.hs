@@ -1,6 +1,5 @@
 module Main (main) where
 
-import Control.Monad (unless)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import GFComb.Core
 import GFComb.Polynomial
@@ -9,194 +8,184 @@ import GFComb.RationalGF
 import GFComb.Recurrence
 import GFComb.AlgebraicGF
 import GFComb.Builtins
-import System.Exit (exitFailure)
+import Test.Tasty (TestTree, defaultMain, testGroup)
+import Test.Tasty.HUnit (assertEqual, assertFailure, testCase)
 
 main :: IO ()
-main = do
-  putStrLn "Running GFComb tests..."
+main =
+  defaultMain $
+    testGroup
+      "GFComb"
+      [ testGroup
+          "Core"
+          [ testConstruction,
+            testAddition,
+            testMultiplication,
+            testDerivative,
+            testIntegral,
+            testDivision,
+            testComposition,
+            testErrors,
+            testInfiniteMultiplication
+          ],
+        testGroup "Polynomial" [testPolynomial],
+        testGroup "Conversion" [testPolynomialConversion],
+        testGroup "RationalGF" [testRationalGFConstruction, testRationalGFConversion],
+        testGroup
+          "Recurrence"
+          [ testRecurrenceGeneratingFunction,
+            testRecurrenceTerms,
+            testThirdOrderRecurrence
+          ],
+        testGroup "Builtins" [testBuiltins],
+        testGroup
+          "Core primitives (gfShift, gfSqrtWithSeed, generalizedBinomial)"
+          [ testGfShift,
+            testCatalanViaSelfReference,
+            testGfSqrtWithSeed,
+            testGfSqrtErrors,
+            testGeneralizedBinomial,
+            testCatalanClosedFormMatchesSelfReference
+          ],
+        testGroup
+          "Closed form for linear recurrences"
+          [ testRecurrenceClosedFormFibonacci,
+            testRecurrenceClosedFormAllRationalRoots,
+            testRecurrenceClosedFormComplexRootsUnavailable,
+            testRecurrenceClosedFormRepeatedRootUnavailable
+          ],
+        testGroup
+          "AlgebraicGF: guarded self-reference and Lagrange inversion"
+          [ testSolveEquationCatalan,
+            testSolveEquationTernaryTrees,
+            testLagrangeInversionMatchesCatalan,
+            testLagrangeInversionMatchesTernaryTrees,
+            testLagrangeInversionCustomCubic,
+            testLagrangeInversionMatchesMixedEquation,
+            testAsLagrangeFormRefusesHigherXPower
+          ],
+        testGroup
+          "Closed form for equations quadratic in the unknown"
+          [ testAlgebraicClosedFormCatalan,
+            testAlgebraicClosedFormBranchSelection,
+            testAlgebraicClosedFormRejectsWrongY0,
+            testAsQuadraticInYRefusesNonQuadratic
+          ]
+      ]
 
-  testConstruction
-  testAddition
-  testMultiplication
-  testDerivative
-  testIntegral
-  testDivision
-  testComposition
-  testErrors
-  testInfiniteMultiplication
-
-  testPolynomial
-
-  testPolynomialConversion
-
-  testRationalGFConstruction
-
-  testRationalGFConversion
-
-  testRecurrenceGeneratingFunction
-  testRecurrenceTerms
-  testThirdOrderRecurrence
-
-  testBuiltins
-
-  testGfShift
-  testCatalanViaSelfReference
-  testGfSqrtWithSeed
-  testGfSqrtErrors
-  testGeneralizedBinomial
-  testCatalanClosedFormMatchesSelfReference
-
-  testRecurrenceClosedFormFibonacci
-  testRecurrenceClosedFormAllRationalRoots
-  testRecurrenceClosedFormComplexRootsUnavailable
-  testRecurrenceClosedFormRepeatedRootUnavailable
-
-  testSolveEquationCatalan
-  testSolveEquationTernaryTrees
-  testLagrangeInversionMatchesCatalan
-  testLagrangeInversionMatchesTernaryTrees
-  testLagrangeInversionCustomCubic
-  testLagrangeInversionMatchesMixedEquation
-  testAsLagrangeFormRefusesHigherXPower
-
-  testAlgebraicClosedFormCatalan
-  testAlgebraicClosedFormBranchSelection
-  testAlgebraicClosedFormRejectsWrongY0
-  testAsQuadraticInYRefusesNonQuadratic
-
-  putStrLn "All tests passed."
-
-assertEqual :: (Eq a, Show a) => String -> a -> a -> IO ()
-assertEqual testName expected actual =
-  unless (expected == actual) $ do
-    putStrLn ("FAILED: " ++ testName)
-    putStrLn ("  Expected: " ++ show expected)
-    putStrLn ("  Actual:   " ++ show actual)
-    exitFailure
-
-testConstruction :: IO ()
+testConstruction :: TestTree
 testConstruction =
-  assertEqual
-    "gfFromList pads with zeros"
-    [1, 2, 3, 0, 0, 0, 0, 0, 0, 0]
-    (gfTake 10 (gfFromList [1, 2, 3]))
+  testCase "gfFromList pads with zeros" $
+    assertEqual
+      "gfFromList pads with zeros"
+      [1, 2, 3, 0, 0, 0, 0, 0, 0, 0]
+      (gfTake 10 (gfFromList [1, 2, 3]))
 
-testAddition :: IO ()
+testAddition :: TestTree
 testAddition =
-  assertEqual
-    "addition"
-    [4, 6, 3, 0, 0]
-    ( gfTake 5 $
-        gfFromList [1, 2, 3] + gfFromList [3, 4]
-    )
+  testCase "addition" $
+    assertEqual
+      "addition"
+      [4, 6, 3, 0, 0]
+      ( gfTake 5 $
+          gfFromList [1, 2, 3] + gfFromList [3, 4]
+      )
 
-testMultiplication :: IO ()
+testMultiplication :: TestTree
 testMultiplication =
-  assertEqual
-    "multiplication"
-    [3, 10, 8, 0, 0]
-    ( gfTake 5 $
-        gfFromList [1, 2] * gfFromList [3, 4]
-    )
+  testCase "multiplication" $
+    assertEqual
+      "multiplication"
+      [3, 10, 8, 0, 0]
+      ( gfTake 5 $
+          gfFromList [1, 2] * gfFromList [3, 4]
+      )
 
-testDerivative :: IO ()
+testDerivative :: TestTree
 testDerivative =
-  assertEqual
-    "derivative"
-    [2, 6, 12, 0, 0]
-    (gfTake 5 (gfDerivative (gfFromList [1, 2, 3, 4])))
+  testCase "derivative" $
+    assertEqual
+      "derivative"
+      [2, 6, 12, 0, 0]
+      (gfTake 5 (gfDerivative (gfFromList [1, 2, 3, 4])))
 
-testIntegral :: IO ()
+testIntegral :: TestTree
 testIntegral =
-  assertEqual
-    "integral"
-    [0, 2, 3, 4, 0]
-    (gfTake 5 (gfIntegral (gfFromList [2, 6, 12])))
+  testCase "integral" $
+    assertEqual
+      "integral"
+      [0, 2, 3, 4, 0]
+      (gfTake 5 (gfIntegral (gfFromList [2, 6, 12])))
 
-testDivision :: IO ()
-testDivision = do
+testDivision :: TestTree
+testDivision = testCase "geometric-series division" $ do
   let x = gfVariable
 
   case gfDivide gfOne (gfOne - x) of
-    Left err -> do
-      putStrLn ("FAILED: division returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("division returned " ++ show err)
     Right result ->
       assertEqual
         "geometric-series division"
         [1, 1, 1, 1, 1, 1]
         (gfTake 6 result)
 
-testComposition :: IO ()
-testComposition = do
+testComposition :: TestTree
+testComposition = testCase "composition" $ do
   let x = gfVariable
       outer = gfFromList [2, 3, 4]
       inner = x + x * x
 
   case gfCompose outer inner of
-    Left err -> do
-      putStrLn ("FAILED: composition returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("composition returned " ++ show err)
     Right result ->
       assertEqual
         "composition"
         [2, 3, 7, 8, 4, 0]
         (gfTake 6 result)
 
-testErrors :: IO ()
-testErrors = do
+testErrors :: TestTree
+testErrors = testCase "error cases" $ do
   case gfDivide gfOne gfVariable of
-    Left DivisionByZeroConstant ->
-      pure ()
-
-    Left otherError -> do
-      putStrLn "FAILED: division by a series with zero constant term"
-      putStrLn "  Expected: DivisionByZeroConstant"
-      putStrLn ("  Actual:   " ++ show otherError)
-      exitFailure
-
-    Right result -> do
-      putStrLn "FAILED: division by a series with zero constant term"
-      putStrLn ("  Expected an error, but received: " ++ show result)
-      exitFailure
+    Left DivisionByZeroConstant -> pure ()
+    Left otherError ->
+      assertFailure
+        ( "division by a series with zero constant term: expected DivisionByZeroConstant, got "
+            ++ show otherError
+        )
+    Right result ->
+      assertFailure
+        ( "division by a series with zero constant term: expected an error, but received "
+            ++ show result
+        )
 
   case gfCompose gfVariable (gfConstant 2) of
     Left (CompositionRequiresZeroConstant constant)
-      | constant == 2 ->
-          pure ()
+      | constant == 2 -> pure ()
+    Left otherError ->
+      assertFailure
+        ( "composition requires zero inner constant term: expected CompositionRequiresZeroConstant 2, got "
+            ++ show otherError
+        )
+    Right result ->
+      assertFailure
+        ( "composition requires zero inner constant term: expected an error, but received "
+            ++ show result
+        )
 
-    Left otherError -> do
-      putStrLn "FAILED: composition requires zero inner constant term"
-      putStrLn "  Expected: CompositionRequiresZeroConstant 2"
-      putStrLn ("  Actual:   " ++ show otherError)
-      exitFailure
-
-    Right result -> do
-      putStrLn "FAILED: composition requires zero inner constant term"
-      putStrLn ("  Expected an error, but received: " ++ show result)
-      exitFailure
-
-
-testInfiniteMultiplication :: IO ()
-testInfiniteMultiplication = do
+testInfiniteMultiplication :: TestTree
+testInfiniteMultiplication = testCase "multiplication of infinite geometric series" $ do
   let x = gfVariable
 
   case gfReciprocal (gfOne - x) of
-    Left err -> do
-      putStrLn ("FAILED: infinite-series multiplication setup returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("infinite-series multiplication setup returned " ++ show err)
     Right geometric ->
       assertEqual
         "multiplication of infinite geometric series"
         [1, 2, 3, 4, 5, 6]
         (gfTake 6 (geometric * geometric))
 
-
-testPolynomial :: IO ()
-testPolynomial = do
+testPolynomial :: TestTree
+testPolynomial = testCase "polynomial arithmetic and inspection" $ do
   let x = polynomialVariable
 
   assertEqual
@@ -268,27 +257,23 @@ testPolynomial = do
     0
     (polynomialConstantTerm polynomialZero)
 
-
-testPolynomialConversion :: IO ()
+testPolynomialConversion :: TestTree
 testPolynomialConversion =
-  assertEqual
-    "convert polynomial to generating function"
-    [1, 2, 3, 0, 0, 0]
-    ( gfTake 6 $
-        polynomialToGF (polynomialFromList [1, 2, 3])
-    )
+  testCase "convert polynomial to generating function" $
+    assertEqual
+      "convert polynomial to generating function"
+      [1, 2, 3, 0, 0, 0]
+      ( gfTake 6 $
+          polynomialToGF (polynomialFromList [1, 2, 3])
+      )
 
-
-testRationalGFConstruction :: IO ()
-testRationalGFConstruction = do
+testRationalGFConstruction :: TestTree
+testRationalGFConstruction = testCase "rational GF construction" $ do
   let numerator = polynomialFromList [1, 1]
       denominator = polynomialFromList [1, -1]
 
   case rationalGF numerator denominator of
-    Left err -> do
-      putStrLn ("FAILED: valid rational generating function returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("valid rational generating function returned " ++ show err)
     Right result -> do
       assertEqual
         "rational GF numerator"
@@ -306,23 +291,16 @@ testRationalGFConstruction = do
         (show result)
 
   case rationalGF polynomialOne polynomialVariable of
-    Left DenominatorHasZeroConstantTerm ->
-      pure ()
+    Left DenominatorHasZeroConstantTerm -> pure ()
+    Right _ -> assertFailure "denominator with zero constant term was accepted"
 
-    Right _ -> do
-      putStrLn "FAILED: denominator with zero constant term was accepted"
-      exitFailure
-
-testRationalGFConversion :: IO ()
-testRationalGFConversion = do
+testRationalGFConversion :: TestTree
+testRationalGFConversion = testCase "rational GF conversion" $ do
   let numerator = polynomialOne
       denominator = polynomialFromList [1, -1]
 
   case rationalGF numerator denominator of
-    Left err -> do
-      putStrLn ("FAILED: rational GF conversion setup returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("rational GF conversion setup returned " ++ show err)
     Right result ->
       assertEqual
         "expand rational GF as a formal power series"
@@ -330,18 +308,15 @@ testRationalGFConversion = do
         (gfTake 6 (rationalGFToGF result))
 
   case rationalGF denominator polynomialOne of
-    Left err -> do
-      putStrLn ("FAILED: polynomial rational GF returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("polynomial rational GF returned " ++ show err)
     Right result ->
       assertEqual
         "rational GF display with denominator one"
         "1 - x"
         (show result)
 
-testRecurrenceGeneratingFunction :: IO ()
-testRecurrenceGeneratingFunction = do
+testRecurrenceGeneratingFunction :: TestTree
+testRecurrenceGeneratingFunction = testCase "recurrence generating function construction" $ do
   let recurrence = linearRecurrence ((1, 1) :| [(1, 2)])
 
   assertEqual
@@ -374,8 +349,8 @@ testRecurrenceGeneratingFunction = do
     "(1 + x) / (1 - x - x^2)"
     (show (recurrenceRationalGF recurrence))
 
-testRecurrenceTerms :: IO ()
-testRecurrenceTerms = do
+testRecurrenceTerms :: TestTree
+testRecurrenceTerms = testCase "recurrence terms" $ do
   let recurrence = linearRecurrence ((1, 1) :| [(1, 1)])
 
   assertEqual
@@ -398,8 +373,8 @@ testRecurrenceTerms = do
     []
     (recurrenceTerms 0 recurrence)
 
-testThirdOrderRecurrence :: IO ()
-testThirdOrderRecurrence = do
+testThirdOrderRecurrence :: TestTree
+testThirdOrderRecurrence = testCase "third-order recurrence" $ do
   let recurrence = linearRecurrence ((1, 0) :| [(1, 0), (1, 1)])
 
   assertEqual
@@ -417,9 +392,8 @@ testThirdOrderRecurrence = do
     [0, 0, 1, 1, 2, 4, 7, 13]
     (recurrenceTerms 8 recurrence)
 
-
-testBuiltins :: IO ()
-testBuiltins = do
+testBuiltins :: TestTree
+testBuiltins = testCase "built-in generating functions" $ do
   assertEqual
     "Fibonacci built-in name"
     "fibonacci"
@@ -436,10 +410,7 @@ testBuiltins = do
     (gfTake 10 (builtinGeneratingFunction fibonacci))
 
   case lookupBuiltin "FIBONACCI" of
-    Nothing -> do
-      putStrLn "FAILED: case-insensitive Fibonacci lookup"
-      exitFailure
-
+    Nothing -> assertFailure "case-insensitive Fibonacci lookup"
     Just result ->
       assertEqual
         "case-insensitive Fibonacci lookup"
@@ -483,9 +454,8 @@ testBuiltins = do
     5
     (length allBuiltins)
 
-
-testGfShift :: IO ()
-testGfShift = do
+testGfShift :: TestTree
+testGfShift = testCase "gfShift" $ do
   assertEqual
     "gfShift 0 is identity"
     [1, 2, 3, 0, 0]
@@ -501,23 +471,21 @@ testGfShift = do
 -- the equivalent definition using "gfMul gfVariable" instead of
 -- "gfShift 1" does not terminate
 --
-testCatalanViaSelfReference :: IO ()
+testCatalanViaSelfReference :: TestTree
 testCatalanViaSelfReference =
-  assertEqual
-    "Catalan numbers via self-referential gfShift definition"
-    [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
-    (gfTake 10 catalan_)
+  testCase "Catalan numbers via self-referential gfShift definition" $
+    assertEqual
+      "Catalan numbers via self-referential gfShift definition"
+      [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+      (gfTake 10 catalan_)
   where
     catalan_ :: GF
     catalan_ = gfAdd gfOne (gfShift 1 (gfMul catalan_ catalan_))
 
-testGfSqrtWithSeed :: IO ()
-testGfSqrtWithSeed = do
+testGfSqrtWithSeed :: TestTree
+testGfSqrtWithSeed = testCase "gfSqrtWithSeed" $ do
   case gfSqrtWithSeed 1 (gfFromList [1, -4]) of
-    Left err -> do
-      putStrLn ("FAILED: sqrt(1 - 4x) returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("sqrt(1 - 4x) returned " ++ show err)
     Right root -> do
       assertEqual
         "sqrt(1 - 4x) coefficients"
@@ -531,32 +499,25 @@ testGfSqrtWithSeed = do
 
   -- case: sqrt(1) = 1
   case gfSqrtWithSeed 1 gfOne of
-    Left err -> do
-      putStrLn ("FAILED: sqrt(1) returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("sqrt(1) returned " ++ show err)
     Right root ->
       assertEqual
         "sqrt(1) coefficients"
         [1, 0, 0, 0, 0]
         (gfTake 5 root)
 
-testGfSqrtErrors :: IO ()
-testGfSqrtErrors = do
+testGfSqrtErrors :: TestTree
+testGfSqrtErrors = testCase "gfSqrtWithSeed error cases" $ do
   case gfSqrtWithSeed 0 gfOne of
     Left (InvalidSqrtSeed 0 1) -> pure ()
-    other -> do
-      putStrLn ("FAILED: zero seed should be rejected, got " ++ show other)
-      exitFailure
+    other -> assertFailure ("zero seed should be rejected, got " ++ show other)
 
   case gfSqrtWithSeed 2 gfOne of
     Left (InvalidSqrtSeed 2 1) -> pure ()
-    other -> do
-      putStrLn ("FAILED: seed not squaring to the constant term should be rejected, got " ++ show other)
-      exitFailure
+    other -> assertFailure ("seed not squaring to the constant term should be rejected, got " ++ show other)
 
-testGeneralizedBinomial :: IO ()
-testGeneralizedBinomial = do
+testGeneralizedBinomial :: TestTree
+testGeneralizedBinomial = testCase "generalizedBinomial" $ do
   assertEqual
     "(1+x)^3 matches ordinary binomial coefficients"
     [1, 3, 3, 1, 0, 0]
@@ -565,53 +526,37 @@ testGeneralizedBinomial = do
   -- Cross-check: (1 + u)^(1/2) composed with u = -4x should reproduce the
   -- same sqrt(1 - 4x) series computed independently via gfSqrtWithSeed.
   case gfCompose (generalizedBinomial (1 / 2)) (gfFromList [0, -4]) of
-    Left err -> do
-      putStrLn ("FAILED: generalizedBinomial composition returned " ++ show err)
-      exitFailure
-
+    Left err -> assertFailure ("generalizedBinomial composition returned " ++ show err)
     Right viaBinomial ->
       case gfSqrtWithSeed 1 (gfFromList [1, -4]) of
-        Left err -> do
-          putStrLn ("FAILED: sqrt(1 - 4x) returned " ++ show err)
-          exitFailure
-
+        Left err -> assertFailure ("sqrt(1 - 4x) returned " ++ show err)
         Right viaNewtonStyle ->
           assertEqual
             "generalizedBinomial and gfSqrtWithSeed agree on sqrt(1 - 4x)"
             (gfTake 8 viaNewtonStyle)
             (gfTake 8 viaBinomial)
 
-
-testCatalanClosedFormMatchesSelfReference :: IO ()
+testCatalanClosedFormMatchesSelfReference :: TestTree
 testCatalanClosedFormMatchesSelfReference =
-  case gfSqrtWithSeed 1 (gfFromList [1, -4]) of
-    Left err -> do
-      putStrLn ("FAILED: sqrt(1 - 4x) returned " ++ show err)
-      exitFailure
+  testCase "closed-form Catalan matches self-referential Catalan" $
+    case gfSqrtWithSeed 1 (gfFromList [1, -4]) of
+      Left err -> assertFailure ("sqrt(1 - 4x) returned " ++ show err)
+      Right root -> do
+        let dropLeadingZero gf = gfFromList (tail (gfTake 200 gf))
+            numerator = dropLeadingZero (gfOne - root)
+            denominator = dropLeadingZero (gfScale 2 gfVariable)
 
-    Right root -> do
-      let dropLeadingZero gf = gfFromList (tail (gfTake 200 gf))
-          numerator = dropLeadingZero (gfOne - root)
-          denominator = dropLeadingZero (gfScale 2 gfVariable)
+        case gfDivide numerator denominator of
+          Left err -> assertFailure ("Catalan closed-form division returned " ++ show err)
+          Right closedFormCatalan -> do
+            let selfReferentialCatalan :: GF
+                selfReferentialCatalan =
+                  gfAdd gfOne (gfShift 1 (gfMul selfReferentialCatalan selfReferentialCatalan))
 
-      case gfDivide numerator denominator of
-        Left err -> do
-          putStrLn ("FAILED: Catalan closed-form division returned " ++ show err)
-          exitFailure
-
-        Right closedFormCatalan -> do
-          let selfReferentialCatalan :: GF
-              selfReferentialCatalan =
-                gfAdd gfOne (gfShift 1 (gfMul selfReferentialCatalan selfReferentialCatalan))
-
-          assertEqual
-            "closed-form Catalan matches self-referential Catalan"
-            (gfTake 10 selfReferentialCatalan)
-            (gfTake 10 closedFormCatalan)
-
-----------------------------------------
--- Closed form for linear recurrences
-----------------------------------------
+            assertEqual
+              "closed-form Catalan matches self-referential Catalan"
+              (gfTake 10 selfReferentialCatalan)
+              (gfTake 10 closedFormCatalan)
 
 -- Check that a closed form agrees with 'recurrenceTermAt' for every n from
 -- 0 up to (and including) maxN, one at a time.
@@ -635,15 +580,13 @@ checkClosedFormAgreesWithRecurrence label recurrence closedForm n maxN
 -- closed form is checked against 'recurrenceTermAt' for many n, and its
 -- exact printed form is checked against the hand-derived value
 -- ( phi/sqrt(5) and -psi/sqrt(5), written out as (5 +- sqrt(5))/10 ).
-testRecurrenceClosedFormFibonacci :: IO ()
-testRecurrenceClosedFormFibonacci = do
+testRecurrenceClosedFormFibonacci :: TestTree
+testRecurrenceClosedFormFibonacci = testCase "Fibonacci closed form" $ do
   let recurrence = linearRecurrence ((1, 1) :| [(1, 1)])
       closedForm = recurrenceClosedForm recurrence
 
   case closedForm of
-    NoClosedForm reason -> do
-      putStrLn ("FAILED: expected a closed form for Fibonacci, got: " ++ reason)
-      exitFailure
+    NoClosedForm reason -> assertFailure ("expected a closed form for Fibonacci, got: " ++ reason)
     ClosedForm terms ->
       assertEqual "Fibonacci closed form has two terms" 2 (length terms)
 
@@ -658,15 +601,13 @@ testRecurrenceClosedFormFibonacci = do
 -- whose characteristic polynomial y^3 - 6y^2 + 11y - 6 factors completely
 -- into three rational roots (1, 2, 3) -- exercises the "no quadratic
 -- factor needed at all" path, and a recurrence of order higher than 2.
-testRecurrenceClosedFormAllRationalRoots :: IO ()
-testRecurrenceClosedFormAllRationalRoots = do
+testRecurrenceClosedFormAllRationalRoots :: TestTree
+testRecurrenceClosedFormAllRationalRoots = testCase "order-3 all-rational-root closed form" $ do
   let recurrence = linearRecurrence ((6, 3) :| [(-11, 6), (6, 14)])
       closedForm = recurrenceClosedForm recurrence
 
   case closedForm of
-    NoClosedForm reason -> do
-      putStrLn ("FAILED: expected a closed form, got: " ++ reason)
-      exitFailure
+    NoClosedForm reason -> assertFailure ("expected a closed form, got: " ++ reason)
     ClosedForm terms ->
       assertEqual "order-3 closed form has three terms" 3 (length terms)
 
@@ -675,13 +616,13 @@ testRecurrenceClosedFormAllRationalRoots = do
 -- a_n = -a_(n-2) has characteristic roots +-i (complex), so no real closed
 -- form exists in this system; it must be reported as such, not crash or
 -- silently return a wrong answer.
-testRecurrenceClosedFormComplexRootsUnavailable :: IO ()
+testRecurrenceClosedFormComplexRootsUnavailable :: TestTree
 testRecurrenceClosedFormComplexRootsUnavailable =
-  case recurrenceClosedForm recurrence of
-    NoClosedForm _ -> pure ()
-    ClosedForm terms -> do
-      putStrLn ("FAILED: expected no closed form for a complex-root recurrence, got: " ++ show terms)
-      exitFailure
+  testCase "no closed form for a complex-root recurrence" $
+    case recurrenceClosedForm recurrence of
+      NoClosedForm _ -> pure ()
+      ClosedForm terms ->
+        assertFailure ("expected no closed form for a complex-root recurrence, got: " ++ show terms)
   where
     recurrence = linearRecurrence ((0, 1) :| [(-1, 0)])
 
@@ -689,41 +630,39 @@ testRecurrenceClosedFormComplexRootsUnavailable =
 -- multiplicity 2), which needs an n * 2^n term this module doesn't
 -- produce, so it must be reported as unavailable rather than silently
 -- wrong.
-testRecurrenceClosedFormRepeatedRootUnavailable :: IO ()
+testRecurrenceClosedFormRepeatedRootUnavailable :: TestTree
 testRecurrenceClosedFormRepeatedRootUnavailable =
-  case recurrenceClosedForm recurrence of
-    NoClosedForm _ -> pure ()
-    ClosedForm terms -> do
-      putStrLn ("FAILED: expected no closed form for a repeated-root recurrence, got: " ++ show terms)
-      exitFailure
+  testCase "no closed form for a repeated-root recurrence" $
+    case recurrenceClosedForm recurrence of
+      NoClosedForm _ -> pure ()
+      ClosedForm terms ->
+        assertFailure ("expected no closed form for a repeated-root recurrence, got: " ++ show terms)
   where
     recurrence = linearRecurrence ((4, 1) :| [(-4, 4)])
-
-----------------------------------------
--- AlgebraicGF: guarded self-reference and Lagrange inversion
-----------------------------------------
 
 -- Catalan numbers via the general guarded solver, driven by a parsed-style
 -- Expr rather than hand-written Haskell self-reference -- this is the same
 -- equation as 'testCatalanViaSelfReference' above, so it's also a check
 -- that 'solveEquation' agrees with the hand-written definition.
-testSolveEquationCatalan :: IO ()
+testSolveEquationCatalan :: TestTree
 testSolveEquationCatalan =
-  assertEqual
-    "Catalan numbers via solveEquation (Y = 1 + x*Y^2)"
-    [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
-    (gfTake 10 (solveEquation catalanEquation))
+  testCase "Catalan numbers via solveEquation (Y = 1 + x*Y^2)" $
+    assertEqual
+      "Catalan numbers via solveEquation (Y = 1 + x*Y^2)"
+      [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+      (gfTake 10 (solveEquation catalanEquation))
 
 -- The equation for ternary trees, Y = 1 + x*Y^3: a cubic equation, which
 -- 'solveEquation' should handle exactly as readily as Catalan's quadratic
 -- one, since the guarded self-reference technique doesn't care about the
 -- degree of phi.
-testSolveEquationTernaryTrees :: IO ()
+testSolveEquationTernaryTrees :: TestTree
 testSolveEquationTernaryTrees =
-  assertEqual
-    "ternary trees via solveEquation (Y = 1 + x*Y^3)"
-    [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
-    (gfTake 10 (solveEquation ternaryTreesEquation))
+  testCase "ternary trees via solveEquation (Y = 1 + x*Y^3)" $
+    assertEqual
+      "ternary trees via solveEquation (Y = 1 + x*Y^3)"
+      [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
+      (gfTake 10 (solveEquation ternaryTreesEquation))
 
 catalanEquation :: Expr
 catalanEquation = Add (Lit 1) (Mul X (Pow Y 2))
@@ -734,37 +673,35 @@ ternaryTreesEquation = Add (Lit 1) (Mul X (Pow Y 3))
 -- Lagrange inversion should recognise Catalan's equation as being of the
 -- form Y = c + x*phi(Y), and its coefficients should agree exactly with
 -- the guarded solver's (two independent algorithms, same answer).
-testLagrangeInversionMatchesCatalan :: IO ()
+testLagrangeInversionMatchesCatalan :: TestTree
 testLagrangeInversionMatchesCatalan =
-  case asLagrangeForm catalanEquation of
-    Nothing -> do
-      putStrLn "FAILED: expected Catalan's equation to be recognised as Lagrange-invertible"
-      exitFailure
-    Just (c, phi) ->
-      assertEqual
-        "Catalan numbers via Lagrange inversion"
-        [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
-        (lagrangeCoefficients c phi 10)
+  testCase "Catalan numbers via Lagrange inversion" $
+    case asLagrangeForm catalanEquation of
+      Nothing -> assertFailure "expected Catalan's equation to be recognised as Lagrange-invertible"
+      Just (c, phi) ->
+        assertEqual
+          "Catalan numbers via Lagrange inversion"
+          [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+          (lagrangeCoefficients c phi 10)
 
 -- Same cross-check for ternary trees: Lagrange inversion handles phi of
 -- any degree just as well as the guarded solver does.
-testLagrangeInversionMatchesTernaryTrees :: IO ()
+testLagrangeInversionMatchesTernaryTrees :: TestTree
 testLagrangeInversionMatchesTernaryTrees =
-  case asLagrangeForm ternaryTreesEquation of
-    Nothing -> do
-      putStrLn "FAILED: expected ternary trees' equation to be recognised as Lagrange-invertible"
-      exitFailure
-    Just (c, phi) ->
-      assertEqual
-        "ternary trees via Lagrange inversion"
-        [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
-        (lagrangeCoefficients c phi 10)
+  testCase "ternary trees via Lagrange inversion" $
+    case asLagrangeForm ternaryTreesEquation of
+      Nothing -> assertFailure "expected ternary trees' equation to be recognised as Lagrange-invertible"
+      Just (c, phi) ->
+        assertEqual
+          "ternary trees via Lagrange inversion"
+          [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
+          (lagrangeCoefficients c phi 10)
 
 -- A custom equation with no additive constant (c = 0) and a mixed
 -- quadratic-and-cubic phi, Y = x*(1 + Y^2 + Y^3), checked both ways:
 -- against the guarded solver directly, and via Lagrange inversion.
-testLagrangeInversionCustomCubic :: IO ()
-testLagrangeInversionCustomCubic = do
+testLagrangeInversionCustomCubic :: TestTree
+testLagrangeInversionCustomCubic = testCase "Y = x*(1 + Y^2 + Y^3)" $ do
   let equation = Mul X (Add (Add (Lit 1) (Pow Y 2)) (Pow Y 3))
       expected = [0, 1, 0, 1, 1, 2, 5, 8, 21, 42]
 
@@ -774,9 +711,7 @@ testLagrangeInversionCustomCubic = do
     (gfTake 10 (solveEquation equation))
 
   case asLagrangeForm equation of
-    Nothing -> do
-      putStrLn "FAILED: expected Y = x*(1 + Y^2 + Y^3) to be recognised as Lagrange-invertible"
-      exitFailure
+    Nothing -> assertFailure "expected Y = x*(1 + Y^2 + Y^3) to be recognised as Lagrange-invertible"
     Just (c, phi) ->
       assertEqual
         "Y = x*(1 + Y^2 + Y^3) via Lagrange inversion"
@@ -790,8 +725,8 @@ testLagrangeInversionCustomCubic = do
 -- recognise equations that already have a single x*(...) term written
 -- out. The resulting coefficients are checked against 'solveEquation',
 -- which has no such shape restriction and computes them independently.
-testLagrangeInversionMatchesMixedEquation :: IO ()
-testLagrangeInversionMatchesMixedEquation = do
+testLagrangeInversionMatchesMixedEquation :: TestTree
+testLagrangeInversionMatchesMixedEquation = testCase "Y = 1 + x*Y + x*Y^2" $ do
   let equation = Add (Add (Lit 1) (Mul X Y)) (Mul X (Pow Y 2))
       expected = [1, 2, 6, 22, 90, 394, 1806, 8558, 41586, 206098]
 
@@ -801,9 +736,9 @@ testLagrangeInversionMatchesMixedEquation = do
     (gfTake 10 (solveEquation equation))
 
   case asLagrangeForm equation of
-    Nothing -> do
-      putStrLn "FAILED: expected Y = 1 + x*Y + x*Y^2 to be recognised as Lagrange-invertible (x can be factored out of both x*(...) terms together)"
-      exitFailure
+    Nothing ->
+      assertFailure
+        "expected Y = 1 + x*Y + x*Y^2 to be recognised as Lagrange-invertible (x can be factored out of both x*(...) terms together)"
     Just (c, phi) ->
       assertEqual
         "Y = 1 + x*Y + x*Y^2 via Lagrange inversion"
@@ -815,36 +750,28 @@ testLagrangeInversionMatchesMixedEquation = do
 -- shape (there is no way to factor out a single x and leave phi free of
 -- x). 'asLagrangeForm' must still refuse this, while 'solveEquation'
 -- computes its coefficients [1, 0, 1, 0, ...] (= 1/(1-x^2)) regardless.
-testAsLagrangeFormRefusesHigherXPower :: IO ()
-testAsLagrangeFormRefusesHigherXPower = do
+testAsLagrangeFormRefusesHigherXPower :: TestTree
+testAsLagrangeFormRefusesHigherXPower = testCase "Y = 1 + x^2*Y" $ do
   let equation = Add (Lit 1) (Mul (Pow X 2) Y)
 
   case asLagrangeForm equation of
     Nothing -> pure ()
-    Just result -> do
-      putStrLn ("FAILED: expected Y = 1 + x^2*Y to be refused by asLagrangeForm, got: " ++ show result)
-      exitFailure
+    Just result ->
+      assertFailure ("expected Y = 1 + x^2*Y to be refused by asLagrangeForm, got: " ++ show result)
 
   assertEqual
     "Y = 1 + x^2*Y via solveEquation"
     [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
     (gfTake 10 (solveEquation equation))
 
-----------------------------------------
--- Closed form for equations quadratic in the unknown
-----------------------------------------
-
 -- Catalan's equation is quadratic in Y (Y = 1 + x*Y^2), so this checks
 -- 'algebraicClosedForm' against both the known Catalan sequence and
 -- 'solveEquation' -- two independent algorithms (quadratic formula vs.
 -- guarded self-reference) agreeing is a strong correctness check.
-testAlgebraicClosedFormCatalan :: IO ()
-testAlgebraicClosedFormCatalan =
+testAlgebraicClosedFormCatalan :: TestTree
+testAlgebraicClosedFormCatalan = testCase "Catalan via algebraicClosedForm" $
   case algebraicClosedForm catalanEquation 1 of
-    Left err -> do
-      putStrLn ("FAILED: Catalan via algebraicClosedForm returned " ++ err)
-      exitFailure
-
+    Left err -> assertFailure ("Catalan via algebraicClosedForm returned " ++ err)
     Right closedFormCatalan -> do
       assertEqual
         "Catalan via algebraicClosedForm"
@@ -861,41 +788,37 @@ testAlgebraicClosedFormCatalan =
 -- denominator (2*a(x) = 2) that never vanishes -- so, unlike Catalan,
 -- there is no removable singularity forcing one branch; the caller's
 -- expected Y(0) genuinely determines which of the two roots comes back.
-testAlgebraicClosedFormBranchSelection :: IO ()
-testAlgebraicClosedFormBranchSelection = do
+testAlgebraicClosedFormBranchSelection :: TestTree
+testAlgebraicClosedFormBranchSelection = testCase "algebraicClosedForm branch selection" $ do
   let equation = Add (Sub X (Mul X Y)) (Pow Y 2)
 
   case algebraicClosedForm equation 1 of
-    Left err -> do
-      putStrLn ("FAILED: expected the Y(0)=1 branch to succeed, got " ++ err)
-      exitFailure
+    Left err -> assertFailure ("expected the Y(0)=1 branch to succeed, got " ++ err)
     Right root ->
       assertEqual "Y(0) = 1 branch is the constant series 1" [1, 0, 0, 0, 0] (gfTake 5 root)
 
   case algebraicClosedForm equation 0 of
-    Left err -> do
-      putStrLn ("FAILED: expected the Y(0)=0 branch to succeed, got " ++ err)
-      exitFailure
+    Left err -> assertFailure ("expected the Y(0)=0 branch to succeed, got " ++ err)
     Right root ->
       assertEqual "Y(0) = 0 branch is the series x" [0, 1, 0, 0, 0] (gfTake 5 root)
 
 -- A Y(0) that doesn't actually satisfy the equation at x = 0 (Catalan
 -- numbers do not start at 2) must be rejected outright, not silently
 -- produce a series that doesn't match the recurrence.
-testAlgebraicClosedFormRejectsWrongY0 :: IO ()
+testAlgebraicClosedFormRejectsWrongY0 :: TestTree
 testAlgebraicClosedFormRejectsWrongY0 =
-  case algebraicClosedForm catalanEquation 2 of
-    Left _ -> pure ()
-    Right result -> do
-      putStrLn ("FAILED: expected Y(0)=2 to be rejected for Catalan's equation, got: " ++ show (gfTake 5 result))
-      exitFailure
+  testCase "algebraicClosedForm rejects a wrong Y(0)" $
+    case algebraicClosedForm catalanEquation 2 of
+      Left _ -> pure ()
+      Right result ->
+        assertFailure ("expected Y(0)=2 to be rejected for Catalan's equation, got: " ++ show (gfTake 5 result))
 
 -- Ternary trees' equation (Y = 1 + x*Y^3) has no Y^2 term at all, so it
 -- is not of the quadratic shape and 'asQuadraticInY' must refuse it.
-testAsQuadraticInYRefusesNonQuadratic :: IO ()
+testAsQuadraticInYRefusesNonQuadratic :: TestTree
 testAsQuadraticInYRefusesNonQuadratic =
-  case asQuadraticInY ternaryTreesEquation of
-    Nothing -> pure ()
-    Just result -> do
-      putStrLn ("FAILED: expected ternary trees' equation to be refused by asQuadraticInY, got: " ++ show result)
-      exitFailure
+  testCase "asQuadraticInY refuses a non-quadratic equation" $
+    case asQuadraticInY ternaryTreesEquation of
+      Nothing -> pure ()
+      Just result ->
+        assertFailure ("expected ternary trees' equation to be refused by asQuadraticInY, got: " ++ show result)
