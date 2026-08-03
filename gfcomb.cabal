@@ -122,4 +122,6 @@ test-suite gfcomb-test
         base ^>=4.18.3.0,
         gfcomb,
         tasty,
-        tasty-hunit
+        tasty-hunit,
+        tasty-quickcheck,
+        QuickCheck
