@@ -1,26 +1,30 @@
+-- | Homogeneous linear recurrences with constant coefficients: building
+-- their associated generating function, reading off terms, and -- where
+-- the characteristic polynomial allows it -- an exact closed form for
+-- a(n).
 module GFComb.Recurrence
-    ( -- Types
+    ( -- * Types
         LinearRecurrence,
 
-        -- Construction
+        -- * Construction
         linearRecurrence,
 
-        -- Inspection
+        -- * Inspection
         recurrenceOrder,
         recurrenceCoefficients,
         recurrenceInitialValues,
 
-        -- Generating-function construction
+        -- * Generating-function construction
         recurrenceNumerator,
         recurrenceDenominator,
         recurrenceRationalGF,
         recurrenceGF,
 
-        -- Terms
+        -- * Terms
         recurrenceTerms,
         recurrenceTermAt,
 
-        -- Closed form
+        -- * Closed form
         Surd,
         ClosedFormTerm (..),
         ClosedFormResult (..),
@@ -49,19 +53,12 @@ import Data.Ratio (numerator, denominator, (%))
 -- Linear recurrences
 --------------------------------
 
+-- | Represents
 --
--- a_n = c1 * a_(n-1)
---     + c2 * a_(n-2)
---     + ...
---     + ck * a_(n-k).
+-- > a_n = c1 * a_(n-1) + c2 * a_(n-2) + ... + ck * a_(n-k)
 --
--- The initial values are
---
--- [a_0, a_1, ..., a_(k-1)].
--- 
--- The coefficients are
---
--- [c1, c2, ..., c_k].
+-- with initial values @[a_0, a_1, ..., a_(k-1)]@ and coefficients
+-- @[c1, c2, ..., ck]@.
 --
 -- Pairing the coefficients and initial values together, one list instead
 -- of two, means a recurrence's coefficients and initial values are
@@ -69,7 +66,7 @@ import Data.Ratio (numerator, denominator, (%))
 -- least one of each (thanks to 'Data.List.NonEmpty'). This is what lets
 -- 'linearRecurrence' below be a total function: the two ways
 -- construction used to fail at runtime (an empty recurrence, or a
--- coefficient/initial-value count mismatch) are now ruled out by the
+-- coefficient\/initial-value count mismatch) are now ruled out by the
 -- type of its argument instead of checked afterwards.
 --
 -- The constructor is hidden from users of the module. Valid recurrence
@@ -81,40 +78,36 @@ newtype LinearRecurrence = LinearRecurrence (NonEmpty (Rational, Rational))
 -- Construction
 -------------------------------
 
--- Construct a homogeneous linear recurrence with constant coefficients,
+-- | Construct a homogeneous linear recurrence with constant coefficients,
 -- from a non-empty list of (coefficient, initial value) pairs.
 --
--- For example:
+-- For example, @linearRecurrence ((1, 1) :| [(1, 1)])@ represents
 --
--- linearRecurrence ((1, 1) :| [(1, 1)])
+-- > a_n = a_(n-1) + a_(n-2),  a_0 = 1,  a_1 = 1
 --
--- represents
---
--- a_n = a_(n-1) + a_(n-2),
--- a_0 = 1,
--- a_1 = 1.
--- 
 -- Because the coefficients and initial values are given together, one
 -- per pair, this can no longer be called with mismatched lengths or with
 -- no coefficients at all, so (unlike the previous, two-separate-list version) this can
 -- no longer fail.
-
+--
+-- >>> map numerator (recurrenceTerms 10 (linearRecurrence (NonEmpty.fromList [(1, 1), (1, 1)])))
+-- [1,1,2,3,5,8,13,21,34,55]
 linearRecurrence :: NonEmpty (Rational, Rational) -> LinearRecurrence
 linearRecurrence = LinearRecurrence
- 
+
 -------------------
 -- Inspection
 -----------------------
- 
--- The coefficients [c1, c2, ..., ck].
+
+-- | The coefficients [c1, c2, ..., ck].
 recurrenceCoefficients :: LinearRecurrence -> [Rational]
 recurrenceCoefficients (LinearRecurrence pairs) = map fst (NonEmpty.toList pairs)
- 
--- The initial values [a_0, a_1, ..., a_(k-1)].
+
+-- | The initial values [a_0, a_1, ..., a_(k-1)].
 recurrenceInitialValues :: LinearRecurrence -> [Rational]
 recurrenceInitialValues (LinearRecurrence pairs) = map snd (NonEmpty.toList pairs)
- 
--- Return the order of the recurrence.
+
+-- | Return the order of the recurrence.
 recurrenceOrder :: LinearRecurrence -> Int
 recurrenceOrder recurrence = length (recurrenceCoefficients recurrence)
  
@@ -122,35 +115,23 @@ recurrenceOrder recurrence = length (recurrenceCoefficients recurrence)
 -- Generating-function construction
 -------------------------------------
 
--- Construct the denominator of the recurrence generating function.
+-- | Construct the denominator of the recurrence generating function.
 --
--- For
+-- For @a_n = c1*a_(n-1) + ... + ck*a_(n-k)@, the denominator is
 --
--- a_n = c1*a_(n-1) + ... + ck*a_(n-k),
---
--- the denominator is
---
--- Q(x) = 1 - c1*x - c2*x^2 - ... - ck*x^k.
--- 
+-- > Q(x) = 1 - c1*x - c2*x^2 - ... - ck*x^k.
 recurrenceDenominator :: LinearRecurrence -> Polynomial
 recurrenceDenominator recurrence =
     polynomialFromList (1 : map negate coefficients)
     where
         coefficients = recurrenceCoefficients recurrence
 
--- Construct the numerator of the recurrence generating function.
+-- | Construct the numerator of the recurrence generating function.
 --
--- If
+-- If @Q(x) = 1 - c1*x - ... - ck*x^k@, then the numerator contains the
+-- first k coefficients of @Q(x)*A(x)@. The coefficient of degree n is
 --
--- Q(x) = 1 - c1*x - ... - ck*x^k,
---
--- then the numerator contains the first k coefficients of
---  Q(x)*A(x).
---
--- The coefficient of degree n is
---
--- a_n - c1*a_(n-1) - c2*a_(n-2) - ... - cn*a_0.
--- 
+-- > a_n - c1*a_(n-1) - c2*a_(n-2) - ... - cn*a_0.
 recurrenceNumerator :: LinearRecurrence -> Polynomial
 recurrenceNumerator recurrence =
     polynomialFromList  [ numeratorCoefficient degree initialValue | 
@@ -163,7 +144,7 @@ recurrenceNumerator recurrence =
         numeratorCoefficient degree initialValue =
             initialValue - sum ( zipWith (*) (take degree coefficients) (reverse (take degree initialValues)))
 
--- Construct the rational generating function associated with a recurrence.
+-- | Construct the rational generating function associated with a recurrence.
 recurrenceRationalGF :: LinearRecurrence -> RationalGF
 recurrenceRationalGF recurrence =
     case  rationalGF (recurrenceNumerator recurrence) (recurrenceDenominator recurrence)
@@ -175,7 +156,7 @@ recurrenceRationalGF recurrence =
                 ++ show err
             )
 
--- Expand the recurrence's rational generating function as an infinite
+-- | Expand the recurrence's rational generating function as an infinite
 -- formal power series.
 recurrenceGF :: LinearRecurrence -> GF
 recurrenceGF = rationalGFToGF . recurrenceRationalGF
@@ -184,14 +165,13 @@ recurrenceGF = rationalGFToGF . recurrenceRationalGF
 -- Terms
 -----------------------------------
 
--- Return the requested number of terms of the recurrence.
+-- | Return the requested number of terms of the recurrence.
 --
 -- A non-positive count produces an empty list.
-
 recurrenceTerms :: Int -> LinearRecurrence -> [Rational]
 recurrenceTerms count recurrence = gfTake count (recurrenceGF recurrence)
 
--- Return the term at the given zero-based index.
+-- | Return the term at the given zero-based index.
 --
 -- A negative index returns 'Nothing'.
 recurrenceTermAt :: Int -> LinearRecurrence -> Maybe Rational
@@ -200,15 +180,14 @@ recurrenceTermAt index recurrence = gfCoeffAtMaybe (recurrenceGF recurrence) ind
 ----------------------------------------
 -- Closed form: an exact p + q*sqrt(d) number type
 ----------------------------------------
+-- | An element of Q(sqrt d), for some fixed integer d, represented as
 --
--- An element of Q(sqrt d), for some fixed integer d, represented as
---
---   p + q * sqrt(d)
+-- > p + q * sqrt(d)
 --
 -- This is exactly the kind of number that shows up as a root of a
 -- quadratic (or higher, after factoring out rational roots) characteristic
 -- polynomial with rational coefficients: for example the roots of
--- x^2 - x - 1 (Fibonacci) are (1 +- sqrt(5)) / 2, elements of Q(sqrt 5).
+-- x^2 - x - 1 (Fibonacci) are (1 +- sqrt(5)) \/ 2, elements of Q(sqrt 5).
 --
 -- d may be negative, giving a complex quadratic extension (e.g. d = -1
 -- gives the Gaussian rationals); the arithmetic below is independent of the sign of d.
@@ -227,7 +206,7 @@ recurrenceTermAt index recurrence = gfCoeffAtMaybe (recurrenceGF recurrence) ind
 -- scope. Every root used in this project's recurrence-solving code comes
 -- from a single characteristic polynomial's single irreducible quadratic
 -- factor, so this situation should never arise in practice.
-
+--
 -- Surd d p q represents p + q * sqrt(d).
 data Surd = Surd Integer Rational Rational
 
@@ -324,26 +303,27 @@ showRationalPlain r
 -- Closed form for a linear recurrence
 ---------------------------------
 
--- One term A * r^n of a closed-form solution a(n) = sum of such terms.
+-- | One term A * r^n of a closed-form solution a(n) = sum of such terms.
 data ClosedFormTerm = ClosedFormTerm {  termCoefficient :: Surd,
+                                         -- ^ The coefficient A.
                                         termRoot :: Surd
+                                         -- ^ The root r.
                                       }
         deriving (Eq, Show)
 
--- The result of attempting to find a closed form for a(n).
+-- | The result of attempting to find a closed form for a(n).
 --
 -- A closed form is found exactly when the characteristic polynomial of the
 -- recurrence factors, over the rationals, into distinct linear factors and
 -- at most one irreducible quadratic factor. Repeated roots (which would
 -- need extra n * r^n-style terms) and complex roots (which this module
 -- does not represent) are reported as 'NoClosedForm', rather than silently dropped.
-
 data ClosedFormResult = ClosedForm [ClosedFormTerm] | NoClosedForm {reasonNoClosedForm :: String}
     deriving (Eq, Show)
 
--- Trying to compute the closed form a(n) = sum_i A_i * r_i^n for a linear
+-- | Trying to compute the closed form a(n) = sum_i A_i * r_i^n for a linear
 -- recurrence, via partial-fraction decomposition of its rational
--- generating function A(x) = P(x)/Q(x) = sum_i A_i / (1 - r_i * x).
+-- generating function A(x) = P(x)\/Q(x) = sum_i A_i \/ (1 - r_i * x).
 --
 -- The r_i are the roots of the characteristic polynomial y^k = c1*y^(k-1)
 -- + ... + ck (obtained from Q by reversing its coefficient list), found
@@ -351,7 +331,8 @@ data ClosedFormResult = ClosedForm [ClosedFormTerm] | NoClosedForm {reasonNoClos
 -- quadratic factor, via the quadratic formula over a p + q*sqrt(d)
 -- extension of the rationals.
 -- The A_i are the partial-fraction residues, computed exactly as
--- A_i = P(1/r_i) / product_{j /= i} (1 - r_j/r_i).
+--
+-- > A_i = P(1/r_i) / product_{j /= i} (1 - r_j/r_i).
 recurrenceClosedForm :: LinearRecurrence -> ClosedFormResult
 recurrenceClosedForm recurrence =
   case characteristicRoots (recurrenceDenominator recurrence) of
@@ -450,7 +431,9 @@ evaluatePolynomialAtSurd polynomial x =
           (surdFromRational 0)
           (polynomialCoefficients polynomial)
 
--- Render a closed form as a human-readable string, e.g.
+-- | Render a closed form as a human-readable string.
+--
+-- >>> showClosedForm (recurrenceClosedForm (linearRecurrence (NonEmpty.fromList [(1, 1), (1, 1)])))
 -- "a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*sqrt(5)) * (1/2 - 1/2*sqrt(5))^n"
 showClosedForm :: ClosedFormResult -> String
 showClosedForm (NoClosedForm reason) = "No closed form available: " ++ reason
@@ -458,8 +441,8 @@ showClosedForm (ClosedForm terms) = "a(n) = " ++ intercalate " + " (map showTerm
   where
     showTerm term = "(" ++ showSurd (termCoefficient term) ++ ") * (" ++ showSurd (termRoot term) ++ ")^n"
 
--- Evaluate a closed form at a specific n, to cross-check it against
--- 'recurrenceTermAt'. (to compare the exact values). Returns Nothing if there is no closed form.
+-- | Evaluate a closed form at a specific n, to cross-check it against
+-- 'recurrenceTermAt'. Returns 'Nothing' if there is no closed form.
 closedFormValueAt :: ClosedFormResult -> Int -> Maybe Rational
 closedFormValueAt (NoClosedForm _) _ = Nothing
 closedFormValueAt (ClosedForm terms) n =
