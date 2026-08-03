@@ -120,4 +120,6 @@ test-suite gfcomb-test
     -- Test dependencies.
     build-depends:
         base ^>=4.18.3.0,
-        gfcomb
+        gfcomb,
+        tasty,
+        tasty-hunit
