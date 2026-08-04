@@ -28,6 +28,17 @@ cabal build all
 cabal test
 ```
 
+The test suite is built on `tasty`, combining example-based unit tests (`tasty-hunit`) with property-based tests (`tasty-quickcheck`) that check the algebraic laws the library should satisfy — commutativity, associativity, identities, and closed-form solutions against directly computed recurrence terms.
+
+## Run the documentation examples
+
+The `>>>` examples in the Haddock comments are executable and checked with `doctest`:
+
+```
+cabal install doctest --overwrite-policy=always
+cabal repl --with-ghc=doctest
+```
+
 ## Run the REPL
 
 ```
@@ -109,7 +120,7 @@ src/GFComb/RationalGF.hs    Rational generating functions
 src/GFComb/Recurrence.hs    Linear recurrences and their closed-form solutions
 src/GFComb/AlgebraicGF.hs   Combinatorial/algebraic generating functions
 src/GFComb/Builtins.hs      Predefined generating functions
-test/Main.hs                Tests
+test/Main.hs                Unit and property-based tests
 ```
 
 ## Current status
