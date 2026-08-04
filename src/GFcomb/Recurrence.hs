@@ -13,6 +13,7 @@ module GFComb.Recurrence
         recurrenceOrder,
         recurrenceCoefficients,
         recurrenceInitialValues,
+        normalizeRecurrence,
 
         -- * Generating-function construction
         recurrenceNumerator,
@@ -44,7 +45,7 @@ import GFComb.Polynomial
     )
 import GFComb.RationalGF ( RationalGF, rationalGF, rationalGFToGF)
 
-import Data.List (foldl', intercalate, tails)
+import Data.List (dropWhileEnd, foldl', intercalate, tails)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio (numerator, denominator, (%))
@@ -110,6 +111,37 @@ recurrenceInitialValues (LinearRecurrence pairs) = map snd (NonEmpty.toList pair
 -- | Return the order of the recurrence.
 recurrenceOrder :: LinearRecurrence -> Int
 recurrenceOrder recurrence = length (recurrenceCoefficients recurrence)
+
+-- | Split a recurrence into the prefix of its initial values that its
+-- coefficients do not actually determine, and the genuine recurrence
+-- underneath.
+--
+-- A trailing zero coefficient means the recurrence does not really depend
+-- on its oldest referenced term: @a_n = 3*a_(n-1) + 0*a_(n-2)@ is an
+-- order-1 recurrence written padded out to order 2. Dropping those
+-- trailing zeros leaves a shorter recurrence whose sequence is the
+-- original one shifted forward; the values it skips past were free in the
+-- padded form (nothing determined them), so they are handed back
+-- separately as the prefix.
+--
+-- Returns 'Nothing' for the recurrence when every coefficient is zero:
+-- there is no order-0 recurrence to reduce to, and the sequence is then
+-- just the prefix followed by zeros.
+--
+-- >>> fst (normalizeRecurrence (linearRecurrence (NonEmpty.fromList [(3, 1), (0, 7)])))
+-- [1 % 1]
+normalizeRecurrence :: LinearRecurrence -> ([Rational], Maybe LinearRecurrence)
+normalizeRecurrence recurrence = (prefix, reduced)
+  where
+    coefficients = recurrenceCoefficients recurrence
+    initialValues = recurrenceInitialValues recurrence
+    keptCoefficients = dropWhileEnd (== 0) coefficients
+    prefixLength = length coefficients - length keptCoefficients
+    prefix = take prefixLength initialValues
+    reduced =
+      fmap
+        linearRecurrence
+        (NonEmpty.nonEmpty (zip keptCoefficients (drop prefixLength initialValues)))
 
 ----------------------------------------
 -- Generating-function construction
@@ -318,8 +350,14 @@ data ClosedFormTerm = ClosedFormTerm {  termCoefficient :: Surd,
 -- at most one irreducible quadratic factor. Repeated roots (which would
 -- need extra n * r^n-style terms) and complex roots (which this module
 -- does not represent) are reported as 'NoClosedForm', rather than silently dropped.
-data ClosedFormResult = ClosedForm [ClosedFormTerm] | NoClosedForm {reasonNoClosedForm :: String}
-    deriving (Eq, Show)
+--
+-- The first field holds values for the first few n given directly rather
+-- than by the sum of terms: a recurrence with trailing zero coefficients
+-- has a few leading values that its own recurrence rule never determines
+-- (see 'normalizeRecurrence'), and those cannot be expressed as
+-- A * r^n terms.
+data ClosedFormResult = ClosedForm [Rational] [ClosedFormTerm] | NoClosedForm {reasonNoClosedForm :: String}
+      deriving (Eq, Show)
 
 -- | Trying to compute the closed form a(n) = sum_i A_i * r_i^n for a linear
 -- recurrence, via partial-fraction decomposition of its rational
@@ -335,22 +373,31 @@ data ClosedFormResult = ClosedForm [ClosedFormTerm] | NoClosedForm {reasonNoClos
 -- > A_i = P(1/r_i) / product_{j /= i} (1 - r_j/r_i).
 recurrenceClosedForm :: LinearRecurrence -> ClosedFormResult
 recurrenceClosedForm recurrence =
-  case characteristicRoots (recurrenceCoefficients recurrence) of
-    Left reason -> NoClosedForm reason
-    Right roots
-      | surdFromRational 0 `elem` roots ->
-          NoClosedForm "the characteristic polynomial has a root at 0 (the recurrence's last coefficient is 0, so it is really a lower-order recurrence written padded out); write it at its true order instead"
-      | hasDuplicateRoot roots ->
-          NoClosedForm "the characteristic polynomial has a repeated root (closed form would need an n * r^n term, which is not supported)"
-      | otherwise ->
-          ClosedForm
-            [ ClosedFormTerm
-                (partialFractionCoefficient numeratorPolynomial root (take index roots ++ drop (index + 1) roots))
-                root
-              | (index, root) <- zip [0 :: Int ..] roots
-            ]
+  case reducedRecurrence of
+    Nothing -> ClosedForm prefix []
+    Just reduced ->
+      case characteristicRoots (recurrenceCoefficients reduced) of
+        Left reason -> NoClosedForm reason
+        Right roots
+          | hasDuplicateRoot roots ->
+              NoClosedForm "the characteristic polynomial has a repeated root (closed form would need an n * r^n term, which is not supported)"
+          | otherwise ->
+              ClosedForm
+                prefix
+                [ ClosedFormTerm
+                    ( surdDiv
+                        ( partialFractionCoefficient
+                            (recurrenceNumerator reduced)
+                            root
+                            (take index roots ++ drop (index + 1) roots)
+                        )
+                        (surdPow root prefixLength)
+                    )
+                    root | (index, root) <- zip [0 :: Int ..] roots
+                ]
   where
-    numeratorPolynomial = recurrenceNumerator recurrence
+    (prefix, reducedRecurrence) = normalizeRecurrence recurrence
+    prefixLength = length prefix
 
 -- The roots of the characteristic polynomial, as Surds.
 --
@@ -439,17 +486,31 @@ evaluatePolynomialAtSurd polynomial x =
 -- "a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*sqrt(5)) * (1/2 - 1/2*sqrt(5))^n"
 showClosedForm :: ClosedFormResult -> String
 showClosedForm (NoClosedForm reason) = "No closed form available: " ++ reason
-showClosedForm (ClosedForm terms) = "a(n) = " ++ intercalate " + " (map showTerm terms)
+showClosedForm (ClosedForm prefix terms) =
+  concatMap showPrefixValue (zip [0 :: Int ..] prefix) ++ mainPart
   where
+    showPrefixValue (index, value) =
+      "a(" ++ show index ++ ") = " ++ showRationalPlain value ++ "; "
+    mainPart
+      | null terms = "a(n) = 0 for n >= " ++ show (length prefix)
+      | null prefix = "a(n) = " ++ termsPart
+      | otherwise = "a(n) = " ++ termsPart ++ " for n >= " ++ show (length prefix)
+    termsPart = intercalate " + " (map showTerm terms)
     showTerm term = "(" ++ showSurd (termCoefficient term) ++ ") * (" ++ showSurd (termRoot term) ++ ")^n"
 
+    
 -- | Evaluate a closed form at a specific n, to cross-check it against
 -- 'recurrenceTermAt'. Returns 'Nothing' if there is no closed form.
 closedFormValueAt :: ClosedFormResult -> Int -> Maybe Rational
 closedFormValueAt (NoClosedForm _) _ = Nothing
-closedFormValueAt (ClosedForm terms) n =
-  case total of
-    Surd _ value 0 -> Just value
-    _ -> Nothing
+closedFormValueAt (ClosedForm prefix terms) n
+  | n < 0 = Nothing
+  | otherwise =
+      case drop n prefix of
+        prefixValue : _ -> Just prefixValue
+        [] ->
+          case total of
+            Surd _ value 0 -> Just value
+            _ -> Nothing
   where
     total = foldl' surdAdd (surdFromRational 0) [ surdMul (termCoefficient term) (surdPow (termRoot term) n) | term <- terms ]

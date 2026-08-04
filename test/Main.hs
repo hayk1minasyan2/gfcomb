@@ -616,7 +616,7 @@ testRecurrenceClosedFormFibonacci = testCase "Fibonacci closed form" $ do
 
   case closedForm of
     NoClosedForm reason -> assertFailure ("expected a closed form for Fibonacci, got: " ++ reason)
-    ClosedForm terms ->
+    ClosedForm _ terms ->
       assertEqual "Fibonacci closed form has two terms" 2 (length terms)
 
   checkClosedFormAgreesWithRecurrence "Fibonacci closed form" recurrence closedForm 0 20
@@ -637,7 +637,7 @@ testRecurrenceClosedFormAllRationalRoots = testCase "order-3 all-rational-root c
 
   case closedForm of
     NoClosedForm reason -> assertFailure ("expected a closed form, got: " ++ reason)
-    ClosedForm terms ->
+    ClosedForm _ terms ->
       assertEqual "order-3 closed form has three terms" 3 (length terms)
 
   checkClosedFormAgreesWithRecurrence "order-3 closed form" recurrence closedForm 0 15
@@ -650,7 +650,7 @@ testRecurrenceClosedFormComplexRootsUnavailable =
   testCase "no closed form for a complex-root recurrence" $
     case recurrenceClosedForm recurrence of
       NoClosedForm _ -> pure ()
-      ClosedForm terms ->
+      ClosedForm _ terms ->
         assertFailure ("expected no closed form for a complex-root recurrence, got: " ++ show terms)
   where
     recurrence = linearRecurrence ((0, 1) :| [(-1, 0)])
@@ -664,7 +664,7 @@ testRecurrenceClosedFormRepeatedRootUnavailable =
   testCase "no closed form for a repeated-root recurrence" $
     case recurrenceClosedForm recurrence of
       NoClosedForm _ -> pure ()
-      ClosedForm terms ->
+      ClosedForm _ terms ->
         assertFailure ("expected no closed form for a repeated-root recurrence, got: " ++ show terms)
   where
     recurrence = linearRecurrence ((4, 1) :| [(-4, 4)])
