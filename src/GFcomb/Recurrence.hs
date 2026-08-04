@@ -110,7 +110,7 @@ recurrenceInitialValues (LinearRecurrence pairs) = map snd (NonEmpty.toList pair
 -- | Return the order of the recurrence.
 recurrenceOrder :: LinearRecurrence -> Int
 recurrenceOrder recurrence = length (recurrenceCoefficients recurrence)
- 
+
 ----------------------------------------
 -- Generating-function construction
 -------------------------------------
@@ -134,12 +134,12 @@ recurrenceDenominator recurrence =
 -- > a_n - c1*a_(n-1) - c2*a_(n-2) - ... - cn*a_0.
 recurrenceNumerator :: LinearRecurrence -> Polynomial
 recurrenceNumerator recurrence =
-    polynomialFromList  [ numeratorCoefficient degree initialValue | 
+    polynomialFromList  [ numeratorCoefficient degree initialValue |
                           (degree, initialValue) <- zip [0 ..] initialValues ]
     where
         coefficients = recurrenceCoefficients recurrence
         initialValues =  recurrenceInitialValues recurrence
- 
+
         numeratorCoefficient :: Int -> Rational -> Rational
         numeratorCoefficient degree initialValue =
             initialValue - sum ( zipWith (*) (take degree coefficients) (reverse (take degree initialValues)))
@@ -335,9 +335,11 @@ data ClosedFormResult = ClosedForm [ClosedFormTerm] | NoClosedForm {reasonNoClos
 -- > A_i = P(1/r_i) / product_{j /= i} (1 - r_j/r_i).
 recurrenceClosedForm :: LinearRecurrence -> ClosedFormResult
 recurrenceClosedForm recurrence =
-  case characteristicRoots (recurrenceDenominator recurrence) of
+  case characteristicRoots (recurrenceCoefficients recurrence) of
     Left reason -> NoClosedForm reason
     Right roots
+      | surdFromRational 0 `elem` roots ->
+          NoClosedForm "the characteristic polynomial has a root at 0 (the recurrence's last coefficient is 0, so it is really a lower-order recurrence written padded out); write it at its true order instead"
       | hasDuplicateRoot roots ->
           NoClosedForm "the characteristic polynomial has a repeated root (closed form would need an n * r^n term, which is not supported)"
       | otherwise ->
@@ -354,8 +356,8 @@ recurrenceClosedForm recurrence =
 --
 -- Left with an explanation whenever the polynomial does not factor into
 -- rational roots plus at most one irreducible quadratic factor.
-characteristicRoots :: Polynomial -> Either String [Surd]
-characteristicRoots denominatorPolynomial =
+characteristicRoots :: [Rational] -> Either String [Surd]
+characteristicRoots coefficients =
   case polynomialDegree leftover of
     Nothing -> Right rationalSurds
     Just 0 -> Right rationalSurds
@@ -374,7 +376,7 @@ characteristicRoots denominatorPolynomial =
             ++ " (only rational roots plus at most one irreducible quadratic factor are supported)"
         )
   where
-    characteristicPolynomial = polynomialFromList (reverse (polynomialCoefficients denominatorPolynomial))
+    characteristicPolynomial = polynomialFromList (reverse (map negate coefficients) ++ [1])
     (rationalRoots, leftover) = polynomialExtractRationalRoots characteristicPolynomial
     rationalSurds = map surdFromRational rationalRoots
 
@@ -407,7 +409,7 @@ quadraticSurdRoots quadratic =
 hasDuplicateRoot :: [Surd] -> Bool
 hasDuplicateRoot roots =
   or [ root == laterRoot | (root : laterRoots) <- tails roots, laterRoot <- laterRoots ]
- 
+
 -- The partial-fraction residue A_i = P(1/r_i) / product_{j /= i} (1 - r_j/r_i),
 -- so that A(x) = sum_i A_i / (1 - r_i*x) and hence a(n) = sum_i A_i * r_i^n.
 partialFractionCoefficient :: Polynomial -> Surd -> [Surd] -> Surd

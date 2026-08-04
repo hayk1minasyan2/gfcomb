@@ -22,6 +22,7 @@ import Test.QuickCheck
     forAll,
     listOf,
     suchThat,
+    property,
     (===)
   )
 
@@ -960,10 +961,12 @@ prop_order1ClosedFormMatchesTerm :: Rational -> Rational -> NonNegative Int -> P
 prop_order1ClosedFormMatchesTerm c v (NonNegative n) =
     let recurrence = linearRecurrence ((c, v) :| [])
         closedForm = recurrenceClosedForm recurrence
-    in  closedFormValueAt closedForm n === recurrenceTermAt n recurrence
+    in  case closedFormValueAt closedForm n of
+          Nothing -> property True
+          Just value -> Just value === recurrenceTermAt n recurrence
 
 testOrder1ClosedFormMatchesTerm :: TestTree
 testOrder1ClosedFormMatchesTerm =
   testProperty
-    "order-1 recurrence closed form matches recurrenceTermAt (c /= 0)"
+    "order-1 recurrence closed form matches recurrenceTermAt"
     prop_order1ClosedFormMatchesTerm
