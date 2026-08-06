@@ -152,7 +152,7 @@ This is the Catalan number generating function.
  
 > add fib C
 Generating function: (sum of fib and C)
-First 8 coefficients: [2, 2, 4, 8, 19, 49, 145, 450]
+First 8 coefficients: [2, 2, 4, 8, 19, 50, 145, 450]
  
 > load partitions
 Loaded built-in: integer partition generating function.
