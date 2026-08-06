@@ -67,6 +67,7 @@ library
                 GFComb.Recurrence
                 GFComb.AlgebraicGF
                 GFComb.Builtins
+                GFComb.REPL.Command
 
     -- Modules included in this library but not exported.
     -- other-modules:
