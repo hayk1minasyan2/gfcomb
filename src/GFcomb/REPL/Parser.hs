@@ -12,8 +12,14 @@
 --
 -- Multiplication must be written explicitly: @x*T^2@, not @xT^2@. 
 module GFComb.REPL.Parser
-  (  
+  ( -- * Entry points
+    parseCommand,
+    parseEquationRhs,
+    parseSeriesExpr,
+    parseRecurrenceBody,
+ 
     -- * Individual parsers
+    command,
     equationExpr,
     seriesExpr,
     recurrenceBody,
@@ -433,4 +439,46 @@ loadCommand = do
     quotedPath = lexeme (char '"' *> manyTill L.charLiteral (char '"'))
     barePath = lexeme (some (satisfy (not . isSpace))) <?> "a file path"
  
+
+ 
+------------------------
+-- Running a parser
+--------------------------
+ 
+-- Run a parser over a whole input string, requiring it to consume
+-- everything, and render any failure with megaparsec's formatting.
+runWholeInput :: Parser a -> String -> Either String a
+runWholeInput parser input =
+  case parse (spaceConsumer *> parser <* eof) "" input of
+    Left errorBundle -> Left (errorBundlePretty errorBundle)
+    Right result -> Right result
+ 
+-- | Parse one line of REPL input.
+--
+-- >>> parseCommand "coeffs fib 10"
+-- Right (Coeffs (SeriesName "fib") 10)
+--
+-- >>> parseCommand "add fib catalan"
+-- Right (Coeffs (SeriesAdd (SeriesName "fib") (SeriesName "catalan")) 10)
+parseCommand :: String -> Either String Command
+parseCommand = runWholeInput command
+ 
+-- | Parse the right-hand side of an equation definition, given the name
+-- being defined.
+--
+-- >>> parseEquationRhs "T" "1 + x*T^2"
+-- Right (Add (Lit (1 % 1)) (Mul X (Pow Y 2)))
+parseEquationRhs :: String -> String -> Either String Expr
+parseEquationRhs unknownName = runWholeInput (equationExpr unknownName)
+ 
+-- | Parse a query expression over already-defined names.
+--
+-- >>> parseSeriesExpr "catalan + fibonacci"
+-- Right (SeriesAdd (SeriesName "catalan") (SeriesName "fibonacci"))
+parseSeriesExpr :: String -> Either String SeriesExpr
+parseSeriesExpr = runWholeInput seriesExpr
+ 
+-- | Parse a recurrence body on its own, without the surrounding @define@.
+parseRecurrenceBody :: String -> Either String LinearRecurrence
+parseRecurrenceBody = runWholeInput recurrenceBody
  
