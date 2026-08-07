@@ -408,8 +408,8 @@ coeffsCommand :: Parser Command
 coeffsCommand = do
   keyword "coeffs"
   expression <- seriesExpr
-  count <- naturalLiteral
-  pure (Coeffs expression (fromIntegral count))
+  count_ <- naturalLiteral
+  pure (Coeffs expression (fromIntegral count_))
  
 -- @coeff EXPR N@
 coeffCommand :: Parser Command
