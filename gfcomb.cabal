@@ -69,6 +69,7 @@ library
                 GFComb.Builtins
                 GFComb.REPL.Command
                 GFComb.REPL.Parser
+                GFComb.REPL.Eval
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -80,7 +81,8 @@ library
     build-depends:
         base ^>=4.18.3.0,
         megaparsec,
-        parser-combinators
+        parser-combinators,
+        containers
 
     -- Directories containing source files.
     hs-source-dirs:   src
