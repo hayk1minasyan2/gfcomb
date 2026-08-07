@@ -25,13 +25,14 @@ where
 
 import Control.Monad (unless, when)
 import Control.Monad.Combinators.Expr (Operator (..), makeExprParser)
+import Data.Char (isSpace)
 import Data.List (intercalate, nub)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Maybe (fromMaybe)
 import Data.Ratio ((%))
 import Data.Void (Void)
 import GFComb.AlgebraicGF (Expr (..))
-import GFComb.REPL.Command (SeriesExpr (..))
+import GFComb.REPL.Command (Command (..), SeriesExpr (..))
 import GFComb.Recurrence (LinearRecurrence, linearRecurrence)
 import Numeric.Natural (Natural)
 import Text.Megaparsec
@@ -349,4 +350,87 @@ seriesOperators =
   ]
   where
     negated = SeriesSub (SeriesLit 0)
+
+
+    
+----------------------------------------
+-- Commands
+----------------------------------------
+ 
+-- | Parse one line of REPL input.
+command :: Parser Command
+command =
+  (Help <$ keyword "help")
+    <|> (ListNames <$ keyword "list")
+    <|> (ShowName <$> (keyword "show" *> identifier))
+    <|> defineCommand
+    <|> coeffsCommand
+    <|> coeffCommand
+    <|> addCommand
+    <|> loadCommand
+    <|> (Quit <$ (keyword "quit" <|> keyword "exit"))
+ 
+-- @define NAME by recurrence: ...@ or @define NAME as solution of: ...@
+defineCommand :: Parser Command
+defineCommand = do
+  keyword "define"
+  name <- identifier
+  byRecurrence name <|> asSolutionOf name
+  where
+    byRecurrence name = do
+      keyword "by"
+      keyword "recurrence"
+      _ <- symbol ":"
+      DefineByRecurrence name <$> recurrenceBody
+ 
+    asSolutionOf name = do
+      keyword "as"
+      keyword "solution"
+      keyword "of"
+      _ <- symbol ":"
+      specificName name
+      _ <- symbol "="
+      DefineByEquation name <$> equationExpr name
+ 
+-- @coeffs EXPR N@
+--
+-- The count can follow the expression without ambiguity precisely because
+-- multiplication must be written explicitly: a bare number can never
+-- continue an expression, so the expression parser stops of its own accord
+-- when it reaches the count.
+coeffsCommand :: Parser Command
+coeffsCommand = do
+  keyword "coeffs"
+  expression <- seriesExpr
+  count <- naturalLiteral
+  pure (Coeffs expression (fromIntegral count))
+ 
+-- @coeff EXPR N@
+coeffCommand :: Parser Command
+coeffCommand = do
+  keyword "coeff"
+  expression <- seriesExpr
+  index <- naturalLiteral
+  pure (CoeffAt expression (fromIntegral index))
+ 
+-- @add A B@, sugar for @coeffs (A + B) 10@.
+--
+-- The two operands are atoms rather than full expressions, so that
+-- @add a b@ cannot be read as @add (a b)@ with a missing second operand.
+addCommand :: Parser Command
+addCommand = do
+  keyword "add"
+  left <- seriesAtom
+  right <- seriesAtom
+  pure (Coeffs (SeriesAdd left right) 10)
+ 
+-- @load PATH@, where the path may be quoted if it contains spaces.
+loadCommand :: Parser Command
+loadCommand = do
+  keyword "load"
+  Load <$> (quotedPath <|> barePath)
+  where
+    quotedPath = lexeme (char '"' *> manyTill L.charLiteral (char '"'))
+    barePath = lexeme (some (satisfy (not . isSpace))) <?> "a file path"
+ 
  
