@@ -15,6 +15,7 @@ module GFComb.REPL.Parser
   (  
     -- * Individual parsers
     equationExpr,
+    seriesExpr,
     recurrenceBody,
  
     -- * Parser type
@@ -30,6 +31,7 @@ import Data.Maybe (fromMaybe)
 import Data.Ratio ((%))
 import Data.Void (Void)
 import GFComb.AlgebraicGF (Expr (..))
+import GFComb.REPL.Command (SeriesExpr (..))
 import GFComb.Recurrence (LinearRecurrence, linearRecurrence)
 import Numeric.Natural (Natural)
 import Text.Megaparsec
@@ -311,4 +313,40 @@ buildRecurrence terms initialValues = do
   where
     describeIndices indices =
       intercalate ", " ["a(" ++ show i ++ ")" | i <- indices]
+ 
+
+
+---------------------------------------
+-- Query expressions
+----------------------------------------
+ 
+-- | Parse an expression combining already-defined generating functions.
+--
+-- Unlike 'equationExpr' this supports division, and any name at all is
+-- accepted here: whether it actually exists is a question for the
+-- evaluator, not the parser.
+seriesExpr :: Parser SeriesExpr
+seriesExpr = makeExprParser seriesTerm seriesOperators
+ 
+seriesTerm :: Parser SeriesExpr
+seriesTerm = do
+  base <- seriesAtom
+  exponents <- many (symbol "^" *> naturalLiteral)
+  pure (foldl SeriesPow base exponents)
+ 
+seriesAtom :: Parser SeriesExpr
+seriesAtom =
+  parens seriesExpr
+    <|> (SeriesX <$ variableX)
+    <|> (SeriesLit <$> rationalLiteral)
+    <|> (SeriesName <$> identifier)
+ 
+seriesOperators :: [[Operator Parser SeriesExpr]]
+seriesOperators =
+  [ [Prefix (negated <$ symbol "-")],
+    [InfixL (SeriesMul <$ symbol "*"), InfixL (SeriesDiv <$ symbol "/")],
+    [InfixL (SeriesAdd <$ symbol "+"), InfixL (SeriesSub <$ symbol "-")]
+  ]
+  where
+    negated = SeriesSub (SeriesLit 0)
  
