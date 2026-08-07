@@ -14,6 +14,10 @@ module GFComb.AlgebraicGF
     lagrangeCoefficient,
     lagrangeCoefficients,
 
+    -- * Pretty-printing
+    showExpr,
+    showAlgebraicClosedForm,
+
     -- * Closed form for equations quadratic in the unknown
     QuadraticInY (..),
     asQuadraticInY,
@@ -46,9 +50,15 @@ import GFComb.Polynomial
     polynomialMul,
     polynomialPow,
     polynomialSub,
-    polynomialVariable
+    polynomialConstantTerm,
+    polynomialScale,
+    polynomialVariable,
+    polynomialNegate,
+    polynomialIsZero,
+    polynomialOne
   )
 import Numeric.Natural (Natural)
+import Data.Ratio (denominator, numerator)
 
 -------------------------------------
 -- Equations -> Y = RightHandSide, for an unknown generating function Y
@@ -447,19 +457,159 @@ divideRemovingCommonZero = go (0 :: Int)
     -- (this only matters for a improperly formatted equation.
     -- every well-formed one we'll actually feed in it needs at most one or two strips).
     
-    go strips numerator denominator
-      | gfConstantTerm denominator /= 0 =
-          case gfDivide numerator denominator of
+    go strips numeratorSeries denominatorSeries
+      | gfConstantTerm denominatorSeries /= 0 =
+          case gfDivide numeratorSeries denominatorSeries of
             Left err -> Left ("division failed: " ++ show err)
             Right result -> Right result
       | strips >= maxStrips =
           Left "the denominator's constant term is still zero after removing several common factors of x"
-      | gfConstantTerm numerator /= 0 =
+      | gfConstantTerm numeratorSeries /= 0 =
           Left "the numerator and denominator do not share a removable factor of x (division by a series with a zero constant term)"
-      | otherwise = go (strips + 1) (gfDivideByX numerator) (gfDivideByX denominator)
+      | otherwise = go (strips + 1) (gfDivideByX numeratorSeries) (gfDivideByX denominatorSeries)
  
 -- Divide a series by x once, dropping its (necessarily zero) constant
 -- term. Only meaningful when that constant term actually is 0. used only
 -- by 'divideRemovingCommonZero', which checks that itself.
 gfDivideByX :: GF -> GF
 gfDivideByX gf = gfFromCoefficients (tail (gfCoefficients gf))
+
+
+----------------------------------------
+-- Pretty-printing
+----------------------------------------
+
+-- | Render an 'Expr' as source text, using the given name in place of 'Y'.
+--
+-- Parentheses are inserted only where precedence requires them, so the
+-- result reads back the way it was written rather than being fully
+-- bracketed.
+--
+-- >>> showExpr "C" (Add (Lit 1) (Mul X (Pow Y 2)))
+-- "1 + x*C^2"
+--
+-- >>> showExpr "T" (Mul X (Add (Lit 1) (Pow Y 3)))
+-- "x*(1 + T^3)"
+showExpr :: String -> Expr -> String
+showExpr unknownName = render 0
+  where
+    -- The precedence argument is the binding strength of the context this
+    -- expression sits in: 1 for the operands of + and -, 2 for *, 3 for
+    -- the exponent position, 4 for the base of a power. An expression
+    -- parenthesises itself when its own strength is lower than what the
+    -- surrounding context demands.
+    render :: Int -> Expr -> String
+    render precedence expr =
+      case expr of
+        X -> "x"
+        Y -> unknownName
+        Lit value ->
+          parenthesiseIf
+            (precedence >= 3 && (value < 0 || denominator value /= 1))
+            (showRationalPlainly value)
+        Add left right ->
+          parenthesiseIf (precedence > 1) (render 1 left ++ " + " ++ render 2 right)
+        Sub left right ->
+          parenthesiseIf (precedence > 1) (render 1 left ++ " - " ++ render 2 right)
+        Mul left right ->
+          parenthesiseIf (precedence > 2) (render 2 left ++ "*" ++ render 3 right)
+        Pow base power ->
+          parenthesiseIf (precedence > 3) (render 4 base ++ "^" ++ show power)
+
+    parenthesiseIf condition text
+      | condition = "(" ++ text ++ ")"
+      | otherwise = text
+
+-- A rational written the way it would be typed: @3@ rather than @3 % 1@.
+showRationalPlainly :: Rational -> String
+showRationalPlainly value
+  | denominator value == 1 = show (numerator value)
+  | otherwise = show (numerator value) ++ "/" ++ show (denominator value)
+
+-- Evaluate an expression in x alone as a finite polynomial, returning
+-- Nothing if it mentions the unknown after all.
+--
+-- This is the mirror image of 'evalExprAsPolynomial' above, and the two
+-- are easy to confuse: that one treats Y as the variable and rejects x,
+-- because it works on the phi of a Lagrange-form equation; this one
+-- treats x as the variable and rejects Y, because it works on the a, b, c
+-- coefficients of a quadratic, which are in x alone.
+xOnlyExprAsPolynomial :: Expr -> Maybe Polynomial
+xOnlyExprAsPolynomial expr =
+  case expr of
+    X -> Just polynomialVariable
+    Y -> Nothing
+    Lit value -> Just (polynomialFromList [value])
+    Add left right -> polynomialAdd <$> xOnlyExprAsPolynomial left <*> xOnlyExprAsPolynomial right
+    Sub left right -> polynomialSub <$> xOnlyExprAsPolynomial left <*> xOnlyExprAsPolynomial right
+    Mul left right -> polynomialMul <$> xOnlyExprAsPolynomial left <*> xOnlyExprAsPolynomial right
+    Pow base power -> (`polynomialPow` power) <$> xOnlyExprAsPolynomial base
+
+-- | Render the closed-form solution of an equation quadratic in the
+-- unknown, as a symbolic expression rather than a series of coefficients.
+--
+-- Takes the same arguments as 'algebraicClosedForm' -- the right-hand side
+-- of @Y = rhs@ and the expected value of Y(0) -- and produces the same
+-- solution that function computes, but written out:
+--
+-- > ( -b(x) +- sqrt(b(x)^2 - 4*a(x)*c(x)) ) / (2*a(x))
+--
+-- The choice of sign is not random: it is determined by Y(0), exactly as
+-- in 'algebraicClosedForm'. There the branch is selected by seeding the
+-- square root with @2*a(0)*y0 + b(0)@; since that seed squares to the
+-- discriminant's constant term, its /sign/ says which of the two roots is
+-- meant -- positive for the @+@ branch, negative for the @-@ branch.
+--
+-- >>> showAlgebraicClosedForm (Add (Lit 1) (Mul X (Pow Y 2))) 1
+-- Right "(1 - sqrt(1 - 4x)) / (2x)"
+showAlgebraicClosedForm :: Expr -> Rational -> Either String String
+showAlgebraicClosedForm rhs expectedConstantTerm =
+  case asQuadraticInY rhs of
+    Nothing ->
+      Left "the equation is not quadratic in the unknown, so it has no closed form of this shape"
+    Just quadratic -> do
+      aPolynomial <- asPolynomial "the coefficient of Y^2" (quadA quadratic)
+      bPolynomial <- asPolynomial "the coefficient of Y" (quadB quadratic)
+      cPolynomial <- asPolynomial "the constant coefficient" (quadC quadratic)
+
+      let aAtZero = polynomialConstantTerm aPolynomial
+          bAtZero = polynomialConstantTerm bPolynomial
+          cAtZero = polynomialConstantTerm cPolynomial
+          seed = 2 * aAtZero * expectedConstantTerm + bAtZero
+          discriminant =
+            polynomialSub
+              (polynomialMul bPolynomial bPolynomial)
+              (polynomialScale 4 (polynomialMul aPolynomial cPolynomial))
+          negatedB = polynomialNegate bPolynomial
+          twoA = polynomialScale 2 aPolynomial
+
+      if aAtZero * expectedConstantTerm * expectedConstantTerm
+        + bAtZero * expectedConstantTerm
+        + cAtZero
+        /= 0
+        then
+          Left
+            ( "Y(0) = "
+                ++ showRationalPlainly expectedConstantTerm
+                ++ " does not satisfy the equation at x = 0, so it cannot be the constant term of a solution"
+            )
+        else
+          if seed == 0
+            then Left "the discriminant vanishes at x = 0, which this module does not handle"
+            else Right (assemble negatedB (if seed > 0 then " + " else " - ") discriminant twoA)
+  where
+    asPolynomial description expr =
+      case xOnlyExprAsPolynomial expr of
+        Nothing ->
+          Left (description ++ " still mentions the unknown, so the equation is not quadratic in it")
+        Just polynomial -> Right polynomial
+
+    assemble leadingPart signText discriminant denominatorPolynomial =
+      let rootPart = "sqrt(" ++ show discriminant ++ ")"
+          numeratorText
+            | polynomialIsZero leadingPart =
+                (if signText == " - " then "-" else "") ++ rootPart
+            | otherwise = show leadingPart ++ signText ++ rootPart
+       in if denominatorPolynomial == polynomialOne
+            then numeratorText
+            else "(" ++ numeratorText ++ ") / (" ++ show denominatorPolynomial ++ ")"
