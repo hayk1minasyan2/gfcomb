@@ -12,17 +12,25 @@
 --
 -- Multiplication must be written explicitly: @x*T^2@, not @xT^2@. 
 module GFComb.REPL.Parser
-  ( 
+  (  
+    -- * Individual parsers
+    equationExpr,
+    recurrenceBody,
+ 
     -- * Parser type
     Parser
   )
 where
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Monad.Combinators.Expr (Operator (..), makeExprParser)
+import Data.List (intercalate, nub)
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.Maybe (fromMaybe)
 import Data.Ratio ((%))
 import Data.Void (Void)
 import GFComb.AlgebraicGF (Expr (..))
+import GFComb.Recurrence (LinearRecurrence, linearRecurrence)
 import Numeric.Natural (Natural)
 import Text.Megaparsec
 import Text.Megaparsec.Char (alphaNumChar, char, letterChar, space1, string)
@@ -176,4 +184,131 @@ equationOperators =
   ]
   where
     negated = Sub (Lit 0)
+ 
+
+
+-------------------------
+-- Recurrences
+-------------------------
+ 
+-- | Parse the body of a @by recurrence:@ definition, e.g.
+--
+-- > a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=1
+--
+-- The name used for the sequence (@a@ above) is whatever appears on the
+-- left, and every later mention must match it - so @fib(n) = fib(n-1) + ...@
+-- works just as well.
+--
+-- Gaps are allowed: @a(n) = a(n-1) + a(n-3)@ has order 3 with a zero
+-- coefficient for @a(n-2)@. Repeated offsets are summed, so
+-- @a(n-1) + a(n-1)@ means a coefficient of 2.
+--
+-- The number of initial values must match the order exactly. That check
+-- happens here rather than later because
+-- 'GFComb.Recurrence.linearRecurrence' pairs each coefficient with its
+-- initial value, and so cannot represent a mismatch at all.
+recurrenceBody :: Parser LinearRecurrence
+recurrenceBody = do
+  placeholder <- identifier
+  _ <- parens (keyword "n")
+  _ <- symbol "="
+  terms <- recurrenceTerms placeholder
+  _ <- symbol ","
+  initialValues <- initialValue placeholder `sepBy1` symbol ","
+  buildRecurrence terms initialValues
+ 
+-- A sum of terms like @3*a(n-1)@ or @a(n-2)@, with signs.
+recurrenceTerms :: String -> Parser [(Int, Rational)]
+recurrenceTerms placeholder = do
+  leadingSign <- option 1 ((-1) <$ symbol "-" <|> 1 <$ symbol "+")
+  firstTerm <- recurrenceTerm placeholder
+  remainingTerms <- many signedTerm
+  pure (applySign leadingSign firstTerm : remainingTerms)
+  where
+    signedTerm = do
+      sign <- ((-1) <$ symbol "-") <|> (1 <$ symbol "+")
+      term <- recurrenceTerm placeholder
+      pure (applySign sign term)
+ 
+    applySign sign (offset, coefficient) = (offset, sign * coefficient)
+ 
+-- One term: an optional rational coefficient, then @a(n-k)@.
+recurrenceTerm :: String -> Parser (Int, Rational)
+recurrenceTerm placeholder = do
+  coefficient <- option 1 (try (rationalLiteral <* symbol "*"))
+  offset <- termOffset placeholder
+  pure (offset, coefficient)
+ 
+-- The @a(n-k)@ part of a term, returning k.
+termOffset :: String -> Parser Int
+termOffset placeholder = do
+  specificName placeholder
+  parens $ do
+    keyword "n"
+    _ <- symbol "-"
+    offset <- naturalLiteral
+    when (offset == 0) $
+      fail
+        ( "'"
+            ++ placeholder
+            ++ "(n-0)' refers to the term being defined, which would make the recurrence circular"
+        )
+    pure (fromIntegral offset)
+ 
+-- One initial value, e.g. @a(0)=1@.
+initialValue :: String -> Parser (Int, Rational)
+initialValue placeholder = do
+  specificName placeholder
+  index <- parens naturalLiteral
+  _ <- symbol "="
+  value <- signedRationalLiteral
+  pure (fromIntegral index, value)
+ 
+-- Turn the parsed terms and initial values into a 'LinearRecurrence',
+-- reporting any mismatch between them.
+buildRecurrence :: [(Int, Rational)] -> [(Int, Rational)] -> Parser LinearRecurrence
+buildRecurrence terms initialValues = do
+  let order = maximum (map fst terms)
+      requiredIndices = [0 .. order - 1]
+      providedIndices = map fst initialValues
+ 
+      coefficientFor offset = sum [c | (o, c) <- terms, o == offset]
+      coefficients = map coefficientFor [1 .. order]
+ 
+      missing = [i | i <- requiredIndices, i `notElem` providedIndices]
+      unexpected_ = nub [i | i <- providedIndices, i `notElem` requiredIndices]
+      duplicated = nub [i | i <- providedIndices, length (filter (== i) providedIndices) > 1]
+ 
+  unless (null duplicated) $
+    fail ("given more than once: " ++ describeIndices duplicated)
+ 
+  unless (null missing) $
+    fail
+      ( "this recurrence has order "
+          ++ show order
+          ++ ", so it needs initial values "
+          ++ describeIndices requiredIndices
+          ++ "; missing "
+          ++ describeIndices missing
+      )
+ 
+  unless (null unexpected_) $
+    fail
+      ( "this recurrence has order "
+          ++ show order
+          ++ ", so only "
+          ++ describeIndices requiredIndices
+          ++ " are used; remove "
+          ++ describeIndices unexpected_
+      )
+ 
+  let valueAt index = fromMaybe 0 (lookup index initialValues)
+      pairs = zip coefficients (map valueAt requiredIndices)
+ 
+  case NonEmpty.nonEmpty pairs of
+    Nothing -> fail "a recurrence must refer to at least one earlier term"
+    Just nonEmptyPairs -> pure (linearRecurrence nonEmptyPairs)
+  where
+    describeIndices indices =
+      intercalate ", " ["a(" ++ show i ++ ")" | i <- indices]
  
