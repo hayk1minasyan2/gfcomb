@@ -19,8 +19,10 @@ module GFComb.REPL.Parser
 where
 
 import Control.Monad (unless)
+import Control.Monad.Combinators.Expr (Operator (..), makeExprParser)
 import Data.Ratio ((%))
 import Data.Void (Void)
+import GFComb.AlgebraicGF (Expr (..))
 import Numeric.Natural (Natural)
 import Text.Megaparsec
 import Text.Megaparsec.Char (alphaNumChar, char, letterChar, space1, string)
@@ -117,3 +119,61 @@ signedRationalLiteral = do
   sign <- option 1 ((-1) <$ symbol "-" <|> 1 <$ symbol "+")
   value <- rationalLiteral
   pure (sign * value)
+
+
+
+-----------------------------------
+-- Equation right-hand sides
+-----------------------------------
+ 
+-- | Parse the right-hand side of an @as solution of:@ definition, given the
+-- name being defined.
+--
+-- That name is resolved to 'Y' as it is parsed, so the resulting 'Expr' is
+-- self-contained and can be handed straight to
+-- 'GFComb.AlgebraicGF.solveEquation'. Any other name is rejected: a
+-- definition may refer only to @x@ and to itself.
+equationExpr :: String -> Parser Expr
+equationExpr unknownName =
+  makeExprParser (equationTerm unknownName) equationOperators
+ 
+-- An atom, followed by any number of @^ n@ exponents.
+--
+-- Exponents are natural-number literals rather than arbitrary expressions,
+-- because 'Pow' takes a 'Natural', so a symbolic or negative exponent
+-- cannot even be represented.
+equationTerm :: String -> Parser Expr
+equationTerm unknownName = do
+  base <- equationAtom unknownName
+  exponents <- many (symbol "^" *> naturalLiteral)
+  pure (foldl Pow base exponents)
+ 
+equationAtom :: String -> Parser Expr
+equationAtom unknownName =
+  parens (equationExpr unknownName)
+    <|> (X <$ variableX)
+    <|> (Lit <$> rationalLiteral)
+    <|> theUnknown
+  where
+    theUnknown = do
+      name <- identifier
+      if name == unknownName
+        then pure Y
+        else
+          fail
+            ( "unknown name '"
+                ++ name
+                ++ "' -- the right-hand side of a definition may only mention 'x' and '"
+                ++ unknownName
+                ++ "' itself"
+            )
+ 
+equationOperators :: [[Operator Parser Expr]]
+equationOperators =
+  [ [Prefix (negated <$ symbol "-")],
+    [InfixL (Mul <$ symbol "*")],
+    [InfixL (Add <$ symbol "+"), InfixL (Sub <$ symbol "-")]
+  ]
+  where
+    negated = Sub (Lit 0)
+ 
