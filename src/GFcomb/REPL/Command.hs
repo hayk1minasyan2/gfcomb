@@ -16,37 +16,55 @@ module GFComb.REPL.Command
 where
 
 import GFComb.AlgebraicGF (Expr)
+import GFComb.Recurrence (LinearRecurrence)
 import Numeric.Natural (Natural)
 
 -- | A single line of REPL input, once parsed.
 --
+-- There are two ways to define a generating function, mirroring the two
+-- solvers in the library: 'DefineByRecurrence' feeds "GFComb.Recurrence",
+-- and 'DefineByEquation' feeds "GFComb.AlgebraicGF".
+--
 -- Note that there is no constructor for the @add@ command: @add A B@ is
 -- sugar, and the parser turns it directly into
--- @'Coeffs' 10 ('SeriesAdd' a b)@. Keeping it out of this type means the
--- evaluator has one code path for coefficient queries rather than two
--- that must be kept in agreement.
+-- @'Coeffs' ('SeriesAdd' a b) 10@. Keeping it out of this type means the
+-- evaluator has one code path for coefficient queries rather than two that
+-- must be kept in agreement.
 data Command
-  = -- | @help@ — list the available commands.
+  = -- | @help@ -- list the available commands.
     Help
-  | -- | @list@ — list every name currently defined, including built-ins.
+  | -- | @list@ -- list every name currently defined, including built-ins.
     ListNames
-  | -- | @show NAME@ — describe one definition: its equation (or symbolic
-    -- form) and its first few coefficients.
+  | -- | @show NAME@ -- describe one definition.
     ShowName String
-  | -- | @define T = 1 + x*T^2@ — introduce a new generating function by a
-    -- functional equation. The 'String' is the name being defined, and
-    -- within the 'Expr' that same name has been resolved to
-    -- 'GFComb.AlgebraicGF.Y' (the unknown), so the equation is
-    -- self-contained.
-    Define String Expr
-  | -- | @coeffs N EXPR@ — the first @N@ coefficients of @EXPR@.
-    Coeffs Int SeriesExpr
-  | -- | @coeff N EXPR@ — the single coefficient of @x^N@ in @EXPR@.
+  | -- | @define C as solution of: C = 1 + x*C^2@
     --
-    -- Note the different meaning of @N@ here and in 'Coeffs'
-    -- Here @N@ is an index.
-    CoeffAt Int SeriesExpr
-  | -- | @load FILE@ — run each line of a file as though it had been typed.
+    -- The 'String' is the name being defined. Within the 'Expr' that name
+    -- has already been resolved to 'GFComb.AlgebraicGF.Y', so the equation
+    -- is self-contained and can go straight to
+    -- 'GFComb.AlgebraicGF.solveEquation'.
+    DefineByEquation String Expr
+  | -- | @define fib by recurrence: a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=1@
+    --
+    -- The 'String' is the name being defined; the placeholder used inside
+    -- the recurrence itself (@a@ above) is local to that syntax and is not
+    -- retained.
+    --
+    -- Building the 'LinearRecurrence' is the parser's job, which means the
+    -- parser is what checks that the number of initial values matches the
+    -- recurrence's order. That check has to happen before the value
+    -- exists, because 'GFComb.Recurrence.linearRecurrence' pairs each
+    -- coefficient with its initial value and so cannot represent a
+    -- mismatch at all.
+    DefineByRecurrence String LinearRecurrence
+  | -- | @coeffs fib 10@ -- the first N coefficients of an expression.
+    Coeffs SeriesExpr Int
+  | -- | @coeff fib 20@ -- the exact coefficient of @x^N@.
+    --
+    -- Note the different meaning of the number here and in 'Coeffs'.
+    -- Here it is an index.
+    CoeffAt SeriesExpr Int
+  | -- | @load FILE@ -- run each line of a file as though it had been typed.
     Load FilePath
   | -- | @quit@ or @exit@.
     Quit
@@ -54,9 +72,9 @@ data Command
 
 -- | An expression combining generating functions that already exist.
 --
--- This is a different language from 'Expr' (deliberately). An 'Expr'
+-- This is a different language from 'Expr'(deliberately). An 'Expr'
 -- describes a functional equation that is being solved, so it may refer to
--- its own unknown; a 'SeriesExpr' only ever refers to series that are
+-- its own unknown. A 'SeriesExpr' only ever refers to series that are
 -- already known, so it cannot be self-referential.
 data SeriesExpr
   = -- | A defined name, e.g. @catalan@.
