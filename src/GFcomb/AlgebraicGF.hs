@@ -8,6 +8,7 @@ module GFComb.AlgebraicGF
 
     -- * Solving: coefficients via guarded self-reference
     solveEquation,
+    isGuardedEquation,
 
     -- * Lagrange inversion for Y = c + x*phi(Y)
     asLagrangeForm,
@@ -613,3 +614,49 @@ showAlgebraicClosedForm rhs expectedConstantTerm =
        in if denominatorPolynomial == polynomialOne
             then numeratorText
             else "(" ++ numeratorText ++ ") / (" ++ show denominatorPolynomial ++ ")"
+
+
+
+----------------------------------------
+-- Guardedness
+----------------------------------------
+
+-- | Whether an equation Y = rhs is guarded, i.e. whether every occurrence
+-- of the unknown on the right is reached through at least one factor of x.
+--
+-- 'solveEquation' only terminates for guarded equations: an unguarded one
+-- such as Y = Y + 1 asks for Y's own first coefficient in order to compute
+-- it, and loops. Checking first turns that hang into a message, which
+-- matters as soon as the equation comes from a person typing rather than
+-- from code.
+--
+-- The check reuses 'expandedTerms', so an x factored out over a whole sum
+-- counts just as well as one written against each term: both
+-- @x*(1 + Y^2)@ and @x + x*Y^2@ are recognised as guarded.
+--
+-- >>> isGuardedEquation (Add (Lit 1) (Mul X (Pow Y 2)))
+-- True
+--
+-- >>> isGuardedEquation (Add Y (Lit 1))
+-- False
+isGuardedEquation :: Expr -> Bool
+isGuardedEquation rhs = all termIsGuarded (expandedTerms rhs)
+  where
+    termIsGuarded (_, term) = not (containsY term) || xVanishingOrder term >= 1
+
+-- How many factors of x a term is divisible by -- equivalently, the order
+-- to which it vanishes at x = 0.
+--
+-- This is deliberately a lower bound rather than an exact answer. For a
+-- sum it takes the minimum of the two sides, which is exact unless the
+-- leading terms cancel; underestimating is the safe direction, since it
+-- can only cause a guarded equation to be rejected, never an unguarded one
+-- to be accepted and then hang.
+xVanishingOrder :: Expr -> Int
+xVanishingOrder X = 1
+xVanishingOrder Y = 0
+xVanishingOrder (Lit _) = 0
+xVanishingOrder (Mul a b) = xVanishingOrder a + xVanishingOrder b
+xVanishingOrder (Pow base power) = fromIntegral power * xVanishingOrder base
+xVanishingOrder (Add a b) = min (xVanishingOrder a) (xVanishingOrder b)
+xVanishingOrder (Sub a b) = min (xVanishingOrder a) (xVanishingOrder b)
