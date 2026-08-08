@@ -1,6 +1,7 @@
 # Cabal build artifacts
 dist-newstyle/
 dist/
+.gfcomb_history
 
 *.hi
 *.o
