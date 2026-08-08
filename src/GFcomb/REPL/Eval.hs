@@ -17,13 +17,24 @@ module GFComb.REPL.Eval
     envNames,
 
     -- * Evaluating query expressions
-    evalSeriesExpr
+    evalSeriesExpr,
+
+     -- * Running commands
+    Response (..),
+    evalCommand,
+    describeDefinition
   )
 where
 
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import GFComb.AlgebraicGF (Expr)
+import GFComb.AlgebraicGF 
+  ( Expr,
+    showAlgebraicClosedForm,
+    showExpr,
+    solveEquation,
+    isGuardedEquation
+  )
 import GFComb.Builtins
   ( allBuiltins,
     builtinDescription,
@@ -40,10 +51,22 @@ import GFComb.Core
     gfMul,
     gfPow,
     gfSub,
-    gfVariable
+    gfVariable,
+    gfCoeffAtMaybe,
+    gfConstantTerm,
+    gfTake
   )
-import GFComb.REPL.Command (SeriesExpr (..))
-import GFComb.Recurrence (LinearRecurrence)
+import GFComb.REPL.Command (SeriesExpr (..), Command (..))
+import GFComb.Recurrence 
+  ( LinearRecurrence,
+    ClosedFormResult (..),
+    recurrenceClosedForm,
+    recurrenceGF,
+    recurrenceRationalGF,
+    showClosedForm
+  )
+import Data.List (intercalate)
+import Data.Ratio (denominator, numerator)
 
 ------------------------------
 -- Definitions
@@ -157,3 +180,206 @@ evalSeriesExpr env = evaluate
                     ++ "(division of formal power series is only defined otherwise)"
                 )
             Left otherError -> Left ("cannot divide: " ++ show otherError)
+
+
+---------------------------------------
+-- Responses
+----------------------------------------
+
+-- | What the REPL should do with the result of a command.
+--
+-- Most commands just produce lines to print. The two exceptions are the
+-- ones that cannot be carried out purely: @load@ needs to read a file, and
+-- @quit@ needs to stop the loop. Rather than performing either here, this
+-- type reports the intention and lets the loop act on it - which is what
+-- keeps 'evalCommand' free of 'IO' and directly testable.
+data Response
+  = -- | Lines to print, in order.
+    Output [String]
+  | -- | The loop should read this file and run each of its lines.
+    LoadRequested FilePath
+  | -- | The loop should stop.
+    QuitRequested
+  deriving (Eq, Show)
+
+----------------------------------------
+-- Describing a definition
+----------------------------------------
+
+-- | The lines describing one definition, as shown by @show@ and echoed
+-- when it is first defined.
+--
+-- Built-ins carry their symbolic form directly. A recurrence can always
+-- produce a rational generating function, and often a closed form too. An
+-- equation can always produce coefficients, but only yields a symbolic
+-- generating function when it is quadratic in the unknown.
+describeDefinition :: Definition -> [String]
+describeDefinition definition =
+  case definitionOrigin definition of
+    FromBuiltin symbolicForm description ->
+      [ description,
+        "Generating function: " ++ symbolicForm
+      ]
+    FromRecurrence recurrence ->
+      -- 'showClosedForm' already renders both cases, but its "No closed form
+      -- available: ..." wording reads oddly under a "Closed form:" label, so
+      -- the two are distinguished here. Matching only 'NoClosedForm' and
+      -- leaving the rest to a catch-all keeps this independent of how many
+      -- fields the success case carries.
+      let closedFormLine =
+            case recurrenceClosedForm recurrence of
+              NoClosedForm reason -> "Closed form: not available -- " ++ reason
+              result -> "Closed form: " ++ showClosedForm result
+       in [ "Generating function: " ++ show (recurrenceRationalGF recurrence),
+            closedFormLine
+          ]
+    FromEquation equation ->
+      -- The expected value of Y(0) is not asked of the user: it is simply
+      -- the constant term of the series 'solveEquation' has already
+      -- produced.
+      let name = definitionName definition
+          constantTerm = gfConstantTerm (definitionSeries definition)
+          generatingFunctionLine =
+            case showAlgebraicClosedForm equation constantTerm of
+              Right rendered -> "Generating function: " ++ rendered
+              Left reason ->
+                "Generating function: no closed form available -- "
+                  ++ reason
+                  ++ " (coefficients can still be computed)"
+       in [ "Defined by: " ++ name ++ " = " ++ showExpr name equation,
+            generatingFunctionLine
+          ]
+
+-- The first few coefficients of a definition, as a line of output.
+--
+-- Shown when a definition is made as well as by @show@, because for an
+-- equation with no closed form it is the only informative output there is.
+firstCoefficientsLine :: Definition -> String
+firstCoefficientsLine definition =
+  "First 10 coefficients: " ++ showRationalList (gfTake 10 (definitionSeries definition))
+
+-- A list of rationals written the way they would be typed, so that whole
+-- numbers appear as @1@ rather than @1 % 1@.
+showRationalList :: [Rational] -> String
+showRationalList values = "[" ++ intercalate ", " (map showRationalPlainly values) ++ "]"
+
+showRationalPlainly :: Rational -> String
+showRationalPlainly value
+  | denominator value == 1 = show (numerator value)
+  | otherwise = show (numerator value) ++ "/" ++ show (denominator value)
+
+-- Every defined name, tagged with how it was defined.
+listing :: Env -> [String]
+listing env =
+  case envNames env of
+    [] -> ["Nothing is defined."]
+    names -> "Defined names:" : map describeName names
+  where
+    describeName name =
+      "  " ++ name ++ case envLookup name env of
+        Just definition -> " (" ++ originLabel (definitionOrigin definition) ++ ")"
+        Nothing -> ""
+
+    originLabel origin =
+      case origin of
+        FromRecurrence _ -> "recurrence"
+        FromEquation _ -> "equation"
+        FromBuiltin _ _ -> "built-in"
+
+----------------------------------------
+-- Running a command
+----------------------------------------
+
+-- | Run one command against the environment, producing what to show and
+-- the environment to carry forward.
+--
+-- Pure: nothing is printed and no file is read here. A command that needs
+-- either reports it through 'Response' instead.
+evalCommand :: Env -> Command -> (Response, Env)
+evalCommand env cmd =
+  case cmd of
+    Help -> (Output helpLines, env)
+    Quit -> (QuitRequested, env)
+    Load path -> (LoadRequested path, env)
+    ListNames -> (Output (listing env), env)
+    ShowName name ->
+      case envLookup name env of
+        Nothing -> (Output [notDefined name], env)
+        Just definition -> (Output (fullDescription definition), env)
+    DefineByRecurrence name recurrence ->
+      defined
+        Definition
+          { definitionName = name,
+            definitionOrigin = FromRecurrence recurrence,
+            definitionSeries = recurrenceGF recurrence
+          }
+    DefineByEquation name equation
+      -- Checked before solving, not after: 'solveEquation' does not fail on
+      -- an unguarded equation, it fails to terminate.
+      | not (isGuardedEquation equation) -> (Output (unguardedMessage name), env)
+      | otherwise ->
+          defined
+            Definition
+              { definitionName = name,
+                definitionOrigin = FromEquation equation,
+                definitionSeries = solveEquation equation
+              }
+    Coeffs expression count ->
+      (Output (withSeries expression (\series -> [showRationalList (gfTake count series)])), env)
+    CoeffAt expression index ->
+      (Output (withSeries expression (coefficientAt index)), env)
+  where
+    fullDescription definition =
+      describeDefinition definition ++ [firstCoefficientsLine definition]
+
+    defined definition =
+      (Output (fullDescription definition), envInsert definition env)
+
+    -- Evaluate a query expression and hand the resulting series to a
+    -- renderer, or report why it could not be evaluated. Both 'Coeffs' and
+    -- 'CoeffAt' need exactly this, and differ only in the renderer.
+    withSeries expression render =
+      case evalSeriesExpr env expression of
+        Left problem -> [problem]
+        Right series -> render series
+
+    coefficientAt index series =
+      case gfCoeffAtMaybe series index of
+        Nothing -> ["a coefficient index cannot be negative"]
+        Just value -> [showRationalPlainly value]
+
+    notDefined name = "'" ++ name ++ "' is not defined -- use 'list' to see what is"
+
+    unguardedMessage name =
+      [ "'" ++ name ++ "' cannot be solved as written.",
+        "Every occurrence of '" ++ name ++ "' on the right must be multiplied by x,",
+        "so that each coefficient depends only on earlier ones.",
+        "For example '" ++ name ++ " = 1 + x*" ++ name ++ "^2' works,",
+        "but '" ++ name ++ " = 1 + " ++ name ++ "^2' does not."
+      ]
+
+-- The text shown by @help@.
+helpLines :: [String]
+helpLines =
+  [ "Commands:",
+    "  define NAME by recurrence: a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=1",
+    "  define NAME as solution of: NAME = 1 + x*NAME^2",
+    "  coeffs EXPR N   the first N coefficients of EXPR",
+    "  coeff EXPR N    the coefficient of x^N in EXPR",
+    "  add A B         the first 10 coefficients of A + B",
+    "  list            every defined name",
+    "  show NAME       describe one definition",
+    "  load FILE       run the commands in a file",
+    "  help            this message",
+    "  quit, exit      leave the REPL",
+    "",
+    "An EXPR combines defined names with + - * / and ^, and may mention x:",
+    "  coeffs catalan + fibonacci 10",
+    "  coeffs 1/(1 - x) 5",
+    "",
+    "In a recurrence, the name on the left is yours to choose, and gaps are",
+    "allowed: a(n) = a(n-1) + a(n-3) has order 3 with a zero coefficient for",
+    "a(n-2). Every initial value a(0) .. a(k-1) must be given.",
+    "",
+    "Multiplication must be written explicitly: x*C^2, not xC^2."
+  ]
