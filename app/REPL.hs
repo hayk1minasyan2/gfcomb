@@ -1,127 +1,117 @@
+-- | The GFComb read-eval-print loop.
+--
+-- This module is deliberately thin. Parsing lives in
+-- "GFComb.REPL.Parser" and evaluation in "GFComb.REPL.Eval", both inside
+-- the library, so that both can be tested; what is left here is only the
+-- part that genuinely needs 'IO': reading lines, printing them, and
+-- reading a file for @load@.
 module Main (main) where
 
-import GFComb.Builtins
-    ( BuiltinGF,
-        allBuiltins,
-        builtinDescription,
-        builtinGeneratingFunction,
-        builtinName,
-        builtinSymbolicForm,
-        lookupBuiltin
-    )
-
-import GFComb.Core (gfTake)
-
-import Data.Ratio
-    ( denominator,
-        numerator
-    )
-
-import System.IO
-    ( hFlush,
-        stdout
-    )
+import Control.Exception (IOException, try)
+import Control.Monad.IO.Class (liftIO)
+import Data.Char (isSpace)
+import GFComb.REPL.Command (Command)
+import GFComb.REPL.Eval
+  ( Env,
+    Response (..),
+    evalCommand,
+    initialEnv
+  )
+import GFComb.REPL.Parser (parseCommand)
+import System.Console.Haskeline
 
 main :: IO ()
 main = do
-    putStrLn "GFComb - Combinatorial Generating Functions"
-    putStrLn "Type 'help' to see available commands."
-    replLoop
+  mapM_ putStrLn banner
+  runInputT replSettings (loop initialEnv)
 
-replLoop :: IO ()
-replLoop = do
-    putStr "gfcomb> "
-    hFlush stdout
+banner :: [String]
+banner =
+  [ "GFComb -- generating functions for combinatorics",
+    "Type 'help' for the available commands, or 'quit' to leave.",
+    ""
+  ]
 
-    input <- getLine
+-- Command history is kept in a file, so it survives between sessions
+-- rather than only within one.
+replSettings :: Settings IO
+replSettings = defaultSettings {historyFile = Just ".gfcomb_history"}
 
-    shouldContinue <- executeCommand (words input)
+-- | The main loop: read a line, run it, repeat until told to stop.
+--
+-- 'getInputLine' returns 'Nothing' at end of input (Ctrl-D), which is
+-- treated the same as @quit@.
+loop :: Env -> InputT IO ()
+loop env = do
+  maybeLine <- getInputLine "gfcomb> "
+  case maybeLine of
+    Nothing -> outputStrLn "Goodbye."
+    Just line
+      | isBlank line -> loop env
+      | otherwise -> do
+          (keepGoing, nextEnv) <- runLine Nothing env line
+          if keepGoing then loop nextEnv else outputStrLn "Goodbye."
 
-    if shouldContinue
-        then replLoop
-    else putStrLn "Goodbye."
+isBlank :: String -> Bool
+isBlank = all isSpace
 
-executeCommand :: [String] -> IO Bool
-executeCommand [] = pure True
+-- Run a single line of input, returning whether to carry on and the
+-- environment to carry on with.
+--
+-- The first argument describes where the line came from, and is used only
+-- to label parse errors: 'Nothing' when typed at the prompt, and the file
+-- and line number when running a file. Without it every error from a
+-- loaded file would appear to be on line 1, because each line is parsed
+-- separately and so is line 1 of its own tiny input.
+--
+-- A long-running command can be abandoned with Ctrl-C without losing the
+-- session.
+runLine :: Maybe String -> Env -> String -> InputT IO (Bool, Env)
+runLine origin env line =
+  handleInterrupt interrupted . withInterrupt $
+    case parseCommand line of
+      Left problem -> do
+        outputStr (label ++ problem)
+        pure (True, env)
+      Right parsedCommand -> runCommand env parsedCommand
+  where
+    label = maybe "" (++ "\n") origin
+    interrupted = do
+      outputStrLn "Interrupted."
+      pure (True, env)
 
-executeCommand ["help"] = do
-    printHelp
-    pure True
+-- Act on one parsed command.
+runCommand :: Env -> Command -> InputT IO (Bool, Env)
+runCommand env parsedCommand =
+  case evalCommand env parsedCommand of
+    (Output outputLines, nextEnv) -> do
+      mapM_ outputStrLn outputLines
+      pure (True, nextEnv)
+    (QuitRequested, nextEnv) -> pure (False, nextEnv)
+    (LoadRequested path, nextEnv) -> runFile nextEnv path
 
-executeCommand ["list"] = do
-    printBuiltins
-    pure True
+-- Read a file and run each of its lines as though it had been typed.
+--
+-- A file may itself contain a @load@, which works; a file that loads
+-- itself will recurse until the stack gives out, which is left as the
+-- user's problem rather than tracked here.
+runFile :: Env -> FilePath -> InputT IO (Bool, Env)
+runFile env path = do
+  attempt <- liftIO (try (readFile path) :: IO (Either IOException String))
+  case attempt of
+    Left ioProblem -> do
+      outputStrLn ("cannot read " ++ path ++ ": " ++ show ioProblem)
+      pure (True, env)
+    Right contents -> runFileLines env path (zip [1 :: Int ..] (lines contents))
 
-executeCommand ["quit"] =
-    pure False
-
-executeCommand ["exit"] =
-    pure False
-
-executeCommand ["show", name] = do
-    showBuiltin name
-    pure True
-
-executeCommand _ = do
-    putStrLn "Unknown command. Type 'help' to see available commands."
-    pure True
-
-printHelp :: IO ()
-printHelp = do
-    putStrLn "Available commands:"
-    putStrLn "  help    Display this help message"
-    putStrLn "  list    List predefined generating functions"
-    putStrLn "  show NAME    Show information about a predefined GF"
-    putStrLn "  quit    Exit GFComb"
-
-printBuiltins :: IO ()
-printBuiltins = do
-    putStrLn "Available predefined generating functions:"
-    mapM_
-        (\builtin -> putStrLn ("  " ++ builtinName builtin))
-        allBuiltins
-
-showBuiltin :: String -> IO ()
-showBuiltin requestedName =
-    case lookupBuiltin requestedName of
-        Nothing ->
-            putStrLn
-                ( "Unknown predefined generating function: "
-                    ++ requestedName)
-        Just builtin -> printBuiltinDetails builtin
-
-
-printBuiltinDetails :: BuiltinGF -> IO ()
-printBuiltinDetails builtin = do
-    putStrLn ("Name: " ++ builtinName builtin)
-    putStrLn ("Description: " ++ builtinDescription builtin)
-    putStrLn ("Generating function: " ++ builtinSymbolicForm builtin)
-    putStrLn
-        ( "First 10 coefficients: "
-            ++ showRationalList
-                ( gfTake
-                    10
-                    (builtinGeneratingFunction builtin)
-                )
-        )
-
-
-
--------------------
--- Helper for show
---------------------
-
-showRational :: Rational -> String
-showRational value
-    | denominator value == 1 = show (numerator value)
-    | otherwise = show (numerator value)
-            ++ "/"
-            ++ show (denominator value)
-
-showRationalList :: [Rational] -> String
-showRationalList values = "[" ++ joinWithComma (map showRational values) ++ "]"
-
-joinWithComma :: [String] -> String
-joinWithComma [] = ""
-joinWithComma [value] = value
-joinWithComma (value : remainingValues) = value ++ ", " ++ joinWithComma remainingValues
+runFileLines :: Env -> FilePath -> [(Int, String)] -> InputT IO (Bool, Env)
+runFileLines env _ [] = pure (True, env)
+runFileLines env path ((lineNumber, line) : remaining)
+  | isBlank line = runFileLines env path remaining
+  | otherwise = do
+      (keepGoing, nextEnv) <- runLine (Just origin) env line
+      if keepGoing
+        then runFileLines nextEnv path remaining
+        else pure (False, nextEnv)
+  where
+    origin = "in " ++ path ++ ", line " ++ show lineNumber ++ ":"
