@@ -39,7 +39,7 @@ import Data.Ratio ((%))
 import Data.Void (Void)
 import GFComb.AlgebraicGF (Expr (..))
 import GFComb.REPL.Command (Command (..), SeriesExpr (..))
-import GFComb.Recurrence (LinearRecurrence, forcedRecurrence)
+import GFComb.Recurrence (LinearRecurrence, forcedRecurrence, polynomialSequence)
 import GFComb.Polynomial (polynomialFromList)
 import Numeric.Natural (Natural)
 import Text.Megaparsec
@@ -327,63 +327,77 @@ initialValue placeholder = do
 -- recurrence, but that is 'GFComb.Recurrence.forcedRecurrence's business,
 -- and the extra initial values it needs are ones it computes rather than
 -- ones the user supplies.
+--
+-- A right-hand side with no references to earlier terms at all is not an
+-- error but a formula: @a(n) = n + 1@ defines its sequence outright, and
+-- goes to 'GFComb.Recurrence.polynomialSequence' instead.
 buildRecurrence :: [RecurrenceTermKind] -> [(Int, Rational)] -> Parser LinearRecurrence
-buildRecurrence terms initialValues = do
-  let pastTerms = [(offset, coefficient) | PastTerm offset coefficient <- terms]
-      forcingTerms = [(degree, coefficient) | ForcingTerm degree coefficient <- terms]
+buildRecurrence terms initialValues
+  | null pastTerms = do
+      -- Every term is already fixed by the formula, so an initial value
+      -- here is not extra information -- it is a second, possibly
+      -- disagreeing, claim about a term the formula has already given.
+      unless (null initialValues) $
+        fail
+          ( "this defines a(n) by a formula in n rather than from earlier terms, so "
+              ++ "every value is already determined; remove "
+              ++ describeIndices (map fst initialValues)
+          )
+      pure (polynomialSequence forcing)
+  | otherwise = do
+      let order = maximum (map fst pastTerms)
+          requiredIndices = [0 .. order - 1]
+          providedIndices = map fst initialValues
 
-  when (null pastTerms) $
-    fail "a recurrence must refer to at least one earlier term, such as a(n-1)"
+          coefficientFor offset = sum [c | (o, c) <- pastTerms, o == offset]
+          coefficients = map coefficientFor [1 .. order]
 
-  let order = maximum (map fst pastTerms)
-      requiredIndices = [0 .. order - 1]
-      providedIndices = map fst initialValues
+          missing = [i | i <- requiredIndices, i `notElem` providedIndices]
+          unexpected_ = nub [i | i <- providedIndices, i `notElem` requiredIndices]
+          duplicated = nub [i | i <- providedIndices, length (filter (== i) providedIndices) > 1]
 
-      coefficientFor offset = sum [c | (o, c) <- pastTerms, o == offset]
-      coefficients = map coefficientFor [1 .. order]
+      unless (null duplicated) $
+        fail ("given more than once: " ++ describeIndices duplicated)
 
-      forcingDegree = maximum (0 : map fst forcingTerms)
-      forcingCoefficientFor degree = sum [c | (d, c) <- forcingTerms, d == degree]
-      forcing = polynomialFromList (map forcingCoefficientFor [0 .. forcingDegree])
+      unless (null missing) $
+        fail
+          ( "this recurrence has order "
+              ++ show order
+              ++ ", so it needs initial values "
+              ++ describeIndices requiredIndices
+              ++ "; missing "
+              ++ describeIndices missing
+          )
 
-      missing = [i | i <- requiredIndices, i `notElem` providedIndices]
-      unexpected_ = nub [i | i <- providedIndices, i `notElem` requiredIndices]
-      duplicated = nub [i | i <- providedIndices, length (filter (== i) providedIndices) > 1]
+      unless (null unexpected_) $
+        fail
+          ( "this recurrence has order "
+              ++ show order
+              ++ ", so only "
+              ++ describeIndices requiredIndices
+              ++ " are used; remove "
+              ++ describeIndices unexpected_
+          )
 
-  unless (null duplicated) $
-    fail ("given more than once: " ++ describeIndices duplicated)
+      let valueAt index = fromMaybe 0 (lookup index initialValues)
+          pairs = zip coefficients (map valueAt requiredIndices)
 
-  unless (null missing) $
-    fail
-      ( "this recurrence has order "
-          ++ show order
-          ++ ", so it needs initial values "
-          ++ describeIndices requiredIndices
-          ++ "; missing "
-          ++ describeIndices missing
-      )
-
-  unless (null unexpected_) $
-    fail
-      ( "this recurrence has order "
-          ++ show order
-          ++ ", so only "
-          ++ describeIndices requiredIndices
-          ++ " are used; remove "
-          ++ describeIndices unexpected_
-      )
-
-  let valueAt index = fromMaybe 0 (lookup index initialValues)
-      pairs = zip coefficients (map valueAt requiredIndices)
-
-  case NonEmpty.nonEmpty pairs of
-    Nothing -> fail "a recurrence must refer to at least one earlier term"
-    Just nonEmptyPairs -> pure (forcedRecurrence nonEmptyPairs forcing)
+      case NonEmpty.nonEmpty pairs of
+        Nothing -> fail "a recurrence must refer to at least one earlier term"
+        Just nonEmptyPairs -> pure (forcedRecurrence nonEmptyPairs forcing)
   where
+    pastTerms = [(offset, coefficient) | PastTerm offset coefficient <- terms]
+    forcingTerms = [(degree, coefficient) | ForcingTerm degree coefficient <- terms]
+
+    forcingDegree = maximum (0 : map fst forcingTerms)
+    forcingCoefficientFor degree = sum [c | (d, c) <- forcingTerms, d == degree]
+    forcing = polynomialFromList (map forcingCoefficientFor [0 .. forcingDegree])
+
     describeIndices indices =
       intercalate ", " ["a(" ++ show i ++ ")" | i <- indices]
-
----------------------------------------
+      
+      
+--------------------------------------
 -- Query expressions
 ----------------------------------------
  

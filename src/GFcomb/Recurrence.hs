@@ -10,6 +10,7 @@ module GFComb.Recurrence
         -- * Construction
         linearRecurrence,
         forcedRecurrence,
+        polynomialSequence,
 
         -- * Inspection
         recurrenceOrder,
@@ -171,7 +172,51 @@ forcedRecurrence pairs forcing =
     nextValue n =
       sum (zipWith (*) coefficients (reverse (take order (drop (n - order) forcedValues))))
         + polynomialEvaluate forcing (fromIntegral n)
-        
+
+
+-- | The recurrence whose sequence is given directly by a polynomial in n:
+--
+-- > a_n = f(n)     for every n
+--
+-- with no reference to earlier terms at all.
+--
+-- This is the order-zero case of 'forcedRecurrence', which cannot express
+-- it: that function takes a non-empty list of (coefficient, initial value)
+-- pairs, so a recurrence with no coefficients has no representation there.
+-- The conversion is the same one, with the base recurrence
+-- gone: d+1 differences annihilate a polynomial of degree d, leaving the
+-- homogeneous recurrence with characteristic polynomial (y-1)^(d+1)
+-- (denominator (1-x)^(d+1)) of order d+1, whose first d+1 values are
+-- f(0) through f(d).
+--
+-- No initial values are taken, because there are none to take: the formula
+-- already fixes every term, including the first ones.
+--
+-- The zero polynomial gives the all-zero sequence.
+--
+-- >>> recurrenceTerms 6 (polynomialSequence (polynomialFromList [1, 1]))
+-- [1 % 1,2 % 1,3 % 1,4 % 1,5 % 1,6 % 1]
+--
+-- >>> recurrenceTerms 6 (polynomialSequence (polynomialFromList [0, 0, 1]))
+-- [0 % 1,1 % 1,4 % 1,9 % 1,16 % 1,25 % 1]
+polynomialSequence :: Polynomial -> LinearRecurrence
+polynomialSequence formula =
+  case polynomialDegree formula of
+    Nothing -> zeroSequence
+    Just degree ->
+      let order = degree + 1
+          denominator_ = polynomialPow (polynomialFromList [1, -1]) (fromIntegral order)
+          coefficients =
+            take order (map negate (drop 1 (polynomialCoefficients denominator_)) ++ repeat 0)
+          values = [polynomialEvaluate formula (fromIntegral n) | n <- [0 .. degree]]
+       in case NonEmpty.nonEmpty (zip coefficients values) of
+            Just pairs -> linearRecurrence pairs
+            Nothing -> zeroSequence
+  where
+    -- a_n = 0*a_(n-1), a_0 = 0.
+    zeroSequence = linearRecurrence ((0, 0) NonEmpty.:| [])
+
+
 -------------------
 -- Inspection
 -----------------------

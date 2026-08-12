@@ -1612,10 +1612,15 @@ testParseForcedRecurrences = testCase "recurrences with a forcing term" $ do
     "a(n) = a(n-1) + a(n-2) + 1, a(0)=0, a(1)=1"
     [0, 1, 2, 4, 7, 12]
 
-  assertRejected
-    "a right-hand side with no earlier term at all"
-    "must refer to at least one earlier term"
-    (parseRecurrenceBody "a(n) = n + 1")
+  assertRecurrenceTerms
+    "a formula in n with no earlier terms"
+    "a(n) = n + 1"
+    [1, 2, 3, 4, 5, 6]
+
+  assertRecurrenceTerms
+    "a quadratic formula in n"
+    "a(n) = n^2"
+    [0, 1, 4, 9, 16, 25]
 
   assertRejected
     "the forcing term does not excuse a missing initial value"
