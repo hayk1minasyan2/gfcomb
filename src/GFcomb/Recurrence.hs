@@ -45,7 +45,7 @@ import GFComb.Polynomial
     )
 import GFComb.RationalGF ( RationalGF, rationalGF, rationalGFToGF)
 
-import Data.List (dropWhileEnd, foldl', intercalate, tails)
+import Data.List (dropWhileEnd, foldl', intercalate)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Ratio (numerator, denominator, (%))
@@ -335,42 +335,60 @@ showRationalPlain r
 -- Closed form for a linear recurrence
 ---------------------------------
 
--- | One term A * r^n of a closed-form solution a(n) = sum of such terms.
-data ClosedFormTerm = ClosedFormTerm {  termCoefficient :: Surd,
-                                         -- ^ The coefficient A.
-                                        termRoot :: Surd
-                                         -- ^ The root r.
-                                      }
-        deriving (Eq, Show)
+-- | One term of a closed-form solution.
+--
+-- A term is A * n^j * r^n, so that a(n) is a sum of such terms. The n^j
+-- factor is what lets a repeated root be represented: a root of
+-- multiplicity m contributes m terms, with j running from 0 to m - 1.
+-- For a root that appears only once, j is 0 and the term is the familiar
+-- A * r^n.
+data ClosedFormTerm = ClosedFormTerm
+  { termCoefficient :: Surd,
+    -- ^ The coefficient A.
+    termPower :: Int,
+    -- ^ The power j of n. Zero unless the root is repeated.
+    termRoot :: Surd
+    -- ^ The root r.
+  }
+  deriving (Eq, Show)
 
 -- | The result of attempting to find a closed form for a(n).
 --
--- A closed form is found exactly when the characteristic polynomial of the
--- recurrence factors, over the rationals, into distinct linear factors and
--- at most one irreducible quadratic factor. Repeated roots (which would
--- need extra n * r^n-style terms) and complex roots (which this module
--- does not represent) are reported as 'NoClosedForm', rather than silently dropped.
+-- A closed form is found exactly when the characteristic polynomial
+-- factors, over the rationals, into linear factors and at most one
+-- irreducible quadratic factor. Rational roots may repeat, and are
+-- handled by the n^j factors in 'ClosedFormTerm'; complex roots (which
+-- this module does not represent) and a repeated /irrational/ root (which
+-- would leave an irreducible factor of degree four) are reported as
+-- 'NoClosedForm' rather than silently dropped.
 --
 -- The first field holds values for the first few n given directly rather
 -- than by the sum of terms: a recurrence with trailing zero coefficients
 -- has a few leading values that its own recurrence rule never determines
--- (see 'normalizeRecurrence'), and those cannot be expressed as
--- A * r^n terms.
-data ClosedFormResult = ClosedForm [Rational] [ClosedFormTerm] | NoClosedForm {reasonNoClosedForm :: String}
-      deriving (Eq, Show)
+-- (see 'normalizeRecurrence'), and those cannot be expressed as terms.
+data ClosedFormResult
+  = ClosedForm [Rational] [ClosedFormTerm]
+  | NoClosedForm {reasonNoClosedForm :: String}
+  deriving (Eq, Show)
 
--- | Trying to compute the closed form a(n) = sum_i A_i * r_i^n for a linear
--- recurrence, via partial-fraction decomposition of its rational
--- generating function A(x) = P(x)\/Q(x) = sum_i A_i \/ (1 - r_i * x).
+-- | Compute the closed form a(n) = sum_i A_i * n^(j_i) * r_i^n for a linear
+-- recurrence.
 --
--- The r_i are the roots of the characteristic polynomial y^k = c1*y^(k-1)
--- + ... + ck (obtained from Q by reversing its coefficient list), found
--- first via the rational root theorem and then, for at most one leftover
--- quadratic factor, via the quadratic formula over a p + q*sqrt(d)
--- extension of the rationals.
--- The A_i are the partial-fraction residues, computed exactly as
+-- The roots r_i are those of the characteristic polynomial
+-- y^k = c1*y^(k-1) + ... + ck, found first via the rational root theorem
+-- and then, for at most one leftover quadratic factor, via the quadratic
+-- formula over a p + q*sqrt(d) extension of the rationals.
 --
--- > A_i = P(1/r_i) / product_{j /= i} (1 - r_j/r_i).
+-- The coefficients A_i are found by solving a linear system rather than by
+-- the partial-fraction residue formula. The shape of the answer is known
+-- in advance -- a root of multiplicity m contributes terms in
+-- n^0 * r^n through n^(m-1) * r^n, and the multiplicities sum to the
+-- order k -- so there are exactly k unknowns, and the k initial values
+-- give exactly k equations. Solving those directly is both simpler than
+-- residues at a repeated pole (which would need derivatives) and free of
+-- the shift correction a prefix would otherwise require: the equations are
+-- written at the actual values of n the initial values belong to, so the
+-- resulting coefficients are already expressed in terms of n.
 recurrenceClosedForm :: LinearRecurrence -> ClosedFormResult
 recurrenceClosedForm recurrence =
   case reducedRecurrence of
@@ -378,26 +396,179 @@ recurrenceClosedForm recurrence =
     Just reduced ->
       case characteristicRoots (recurrenceCoefficients reduced) of
         Left reason -> NoClosedForm reason
-        Right roots
-          | hasDuplicateRoot roots ->
-              NoClosedForm "the characteristic polynomial has a repeated root (closed form would need an n * r^n term, which is not supported)"
-          | otherwise ->
-              ClosedForm
-                prefix
-                [ ClosedFormTerm
-                    ( surdDiv
-                        ( partialFractionCoefficient
-                            (recurrenceNumerator reduced)
-                            root
-                            (take index roots ++ drop (index + 1) roots)
-                        )
-                        (surdPow root prefixLength)
-                    )
-                    root | (index, root) <- zip [0 :: Int ..] roots
+        Right roots ->
+          let columns = termShapes roots
+              initialValues = recurrenceInitialValues reduced
+              rows =
+                [ map (rowEntry n) columns
+                  | n <- take (length initialValues) [prefixLength ..]
                 ]
+              augmented = zipWith (\row value -> row ++ [surdFromRational value]) rows initialValues
+           in case solveLinearSystem augmented of
+                Nothing ->
+                  NoClosedForm
+                    "the linear system for the closed form's coefficients has no unique solution"
+                Just coefficients ->
+                  ClosedForm
+                    prefix
+                    [ ClosedFormTerm coefficient power root
+                      | (coefficient, (root, power)) <- zip coefficients columns,
+                        not (surdIsZero coefficient)
+                    ]
   where
     (prefix, reducedRecurrence) = normalizeRecurrence recurrence
     prefixLength = length prefix
+
+    rowEntry n (root, power) =
+      surdMul (surdFromRational (fromIntegral n ^ power)) (surdPow root n)
+
+-- The shape of each term in the closed form: one (root, power) pair per
+-- unknown coefficient.
+--
+-- A root of multiplicity m contributes m of them, with powers 0 through
+-- m - 1, so the total is the order of the recurrence.
+termShapes :: [Surd] -> [(Surd, Int)]
+termShapes roots =
+  [(root, power) | (root, multiplicity) <- groupRoots roots, power <- [0 .. multiplicity - 1]]
+
+-- Count how often each distinct root occurs, keeping first-appearance
+-- order so that the terms of a closed form come out in the same order the
+-- roots were found in.
+groupRoots :: [Surd] -> [(Surd, Int)]
+groupRoots = foldl' countRoot []
+  where
+    countRoot groups root =
+      case break (\(known, _) -> known == root) groups of
+        (before, (known, count) : after) -> before ++ (known, count + 1) : after
+        (before, []) -> before ++ [(root, 1)]
+
+surdIsZero :: Surd -> Bool
+surdIsZero (Surd _ p q) = p == 0 && q == 0
+
+----------------------------------------
+-- Solving a linear system over the Surds
+----------------------------------------
+
+-- Solve a square system by Gaussian elimination, given its augmented
+-- matrix: each row is the k coefficients followed by that equation's
+-- right-hand side.
+--
+-- 'Nothing' if the system is singular. For the systems built here that
+-- should not happen.
+solveLinearSystem :: [[Surd]] -> Maybe [Surd]
+solveLinearSystem rows = fmap backSubstitute (eliminate rows)
+
+-- Reduce to triangular form. Each returned row begins with a 1, and each
+-- later row is one column shorter than the one before, that column having
+-- been eliminated from it.
+eliminate :: [[Surd]] -> Maybe [[Surd]]
+eliminate [] = Just []
+eliminate rows = do
+  (pivotRow, otherRows) <- selectPivot rows
+  case pivotRow of
+    [] -> Nothing
+    (pivot : pivotRest) -> do
+      let normalized = map (`surdDiv` pivot) pivotRest
+          eliminateFrom row =
+            case row of
+              (leading : rest) ->
+                zipWith (\entry above -> surdSub entry (surdMul leading above)) rest normalized
+              [] -> []
+      remainingRows <- eliminate (map eliminateFrom otherRows)
+      Just ((surdFromRational 1 : normalized) : remainingRows)
+
+-- Find a row whose first entry is non-zero, returning it along with the
+-- rows that were not chosen.
+selectPivot :: [[Surd]] -> Maybe ([Surd], [[Surd]])
+selectPivot = go []
+  where
+    go _ [] = Nothing
+    go passedOver (row : rest) =
+      case row of
+        (leading : _)
+          | not (surdIsZero leading) -> Just (row, reverse passedOver ++ rest)
+        _ -> go (row : passedOver) rest
+
+-- Read off the solution from the triangular form produced by 'eliminate',
+-- last unknown first.
+--
+-- Each row is 1, then the coefficients of the unknowns after this one,
+-- then the right-hand side -- so once those later unknowns are known, this
+-- row's unknown is what is left of the right-hand side.
+backSubstitute :: [[Surd]] -> [Surd]
+backSubstitute = foldr solveRow []
+  where
+    solveRow row alreadySolved =
+      case row of
+        (_ : coefficientsAndRhs) ->
+          case splitOffLast coefficientsAndRhs of
+            Just (coefficients, rightHandSide) ->
+              foldl' surdSub rightHandSide (zipWith surdMul coefficients alreadySolved)
+                : alreadySolved
+            Nothing -> alreadySolved
+        [] -> alreadySolved
+
+-- Split a list into its leading elements and its final one.
+splitOffLast :: [a] -> Maybe ([a], a)
+splitOffLast [] = Nothing
+splitOffLast [final] = Just ([], final)
+splitOffLast (first : rest) = do
+  (leading, final) <- splitOffLast rest
+  Just (first : leading, final)
+
+-- | Render a closed form as a human-readable string.
+--
+-- >>> showClosedForm (recurrenceClosedForm (linearRecurrence (NonEmpty.fromList [(1, 1), (1, 1)])))
+-- "a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*sqrt(5)) * (1/2 - 1/2*sqrt(5))^n"
+showClosedForm :: ClosedFormResult -> String
+showClosedForm (NoClosedForm reason) = "No closed form available: " ++ reason
+showClosedForm (ClosedForm prefix terms) =
+  concatMap showPrefixValue (zip [0 :: Int ..] prefix) ++ mainPart
+  where
+    showPrefixValue (index, value) =
+      "a(" ++ show index ++ ") = " ++ showRationalPlain value ++ "; "
+    mainPart
+      | null terms = "a(n) = 0 for n >= " ++ show (length prefix)
+      | null prefix = "a(n) = " ++ termsPart
+      | otherwise = "a(n) = " ++ termsPart ++ " for n >= " ++ show (length prefix)
+    termsPart = intercalate " + " (map showTerm terms)
+
+    -- A factor of n^0 or of 1^n carries no information, so neither is
+    -- printed. Dropping the latter matters for readability more than it
+    -- might seem: a root of 1 is exactly what an inhomogeneous recurrence
+    -- with a polynomial forcing term contributes, so without this the
+    -- triangular numbers would print as
+    -- "(1/2) * n * (1)^n + (1/2) * n^2 * (1)^n".
+    showTerm term = intercalate " * " (coefficientPart : powerPart ++ rootPart)
+      where
+        coefficientPart = "(" ++ showSurd (termCoefficient term) ++ ")"
+        powerPart
+          | termPower term == 0 = []
+          | termPower term == 1 = ["n"]
+          | otherwise = ["n^" ++ show (termPower term)]
+        rootPart
+          | termRoot term == surdFromRational 1 = []
+          | otherwise = ["(" ++ showSurd (termRoot term) ++ ")^n"]
+
+-- | Evaluate a closed form at a specific n, to cross-check it against
+-- 'recurrenceTermAt'. Returns 'Nothing' if there is no closed form.
+closedFormValueAt :: ClosedFormResult -> Int -> Maybe Rational
+closedFormValueAt (NoClosedForm _) _ = Nothing
+closedFormValueAt (ClosedForm prefix terms) n
+  | n < 0 = Nothing
+  | otherwise =
+      case drop n prefix of
+        prefixValue : _ -> Just prefixValue
+        [] ->
+          case total of
+            Surd _ value 0 -> Just value
+            _ -> Nothing
+  where
+    total = foldl' surdAdd (surdFromRational 0) (map valueOfTerm terms)
+    valueOfTerm term =
+      surdMul
+        (surdMul (termCoefficient term) (surdFromRational (fromIntegral n ^ termPower term)))
+        (surdPow (termRoot term) n)
 
 -- The roots of the characteristic polynomial, as Surds.
 --
@@ -435,13 +606,14 @@ characteristicRoots coefficients =
 -- 'polynomialExtractRationalRoots' has exhaustively removed every rational
 -- root, its discriminant is guaranteed not to be a perfect square (a
 -- perfect-square discriminant would mean rational roots existed, and they
--- would already have been found).
+-- would already have been found). In particular a zero discriminant, which
+-- would mean a repeated root, cannot arise here: that root would be
+-- rational, and so already extracted.
 quadraticSurdRoots :: Polynomial -> Either String (Surd, Surd)
 quadraticSurdRoots quadratic =
   case polynomialCoefficients quadratic of
     [c0, c1, c2]
       | discriminant < 0 -> Left "the characteristic polynomial has complex roots (no real closed form)"
-      | discriminant == 0 -> Left "the characteristic polynomial has a repeated root (closed form would need an n * r^n term, which is not supported)"
       | otherwise -> Right (root1, root2)
       where
         discriminant = c1 * c1 - 4 * c2 * c0
@@ -451,66 +623,3 @@ quadraticSurdRoots quadratic =
         root1 = surdDiv (surdAdd negB sqrtDiscriminant) twoA
         root2 = surdDiv (surdSub negB sqrtDiscriminant) twoA
     _ -> Left "internal error: expected a quadratic leftover factor"
-
-
-hasDuplicateRoot :: [Surd] -> Bool
-hasDuplicateRoot roots =
-  or [ root == laterRoot | (root : laterRoots) <- tails roots, laterRoot <- laterRoots ]
-
--- The partial-fraction residue A_i = P(1/r_i) / product_{j /= i} (1 - r_j/r_i),
--- so that A(x) = sum_i A_i / (1 - r_i*x) and hence a(n) = sum_i A_i * r_i^n.
-partialFractionCoefficient :: Polynomial -> Surd -> [Surd] -> Surd
-partialFractionCoefficient numeratorPolynomial root otherRoots =
-  surdDiv numeratorAtReciprocalRoot denominatorProduct
-  where
-    reciprocalRoot = surdRecip root
-    numeratorAtReciprocalRoot = evaluatePolynomialAtSurd numeratorPolynomial reciprocalRoot
-    denominatorProduct =
-      foldl'
-        surdMul
-        (surdFromRational 1)
-        [ surdSub (surdFromRational 1) (surdMul otherRoot reciprocalRoot) | otherRoot <- otherRoots ]
-
--- Evaluate a polynomial with rational coefficients at a Surd, with Horner's
--- method (same as GFComb.Polynomial.polynomialEvaluate, generalized to the
--- Surd extension field).
-evaluatePolynomialAtSurd :: Polynomial -> Surd -> Surd
-evaluatePolynomialAtSurd polynomial x =
-  foldr   (\coefficient acc -> surdAdd (surdFromRational coefficient) (surdMul x acc))
-          (surdFromRational 0)
-          (polynomialCoefficients polynomial)
-
--- | Render a closed form as a human-readable string.
---
--- >>> showClosedForm (recurrenceClosedForm (linearRecurrence (NonEmpty.fromList [(1, 1), (1, 1)])))
--- "a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*sqrt(5)) * (1/2 - 1/2*sqrt(5))^n"
-showClosedForm :: ClosedFormResult -> String
-showClosedForm (NoClosedForm reason) = "No closed form available: " ++ reason
-showClosedForm (ClosedForm prefix terms) =
-  concatMap showPrefixValue (zip [0 :: Int ..] prefix) ++ mainPart
-  where
-    showPrefixValue (index, value) =
-      "a(" ++ show index ++ ") = " ++ showRationalPlain value ++ "; "
-    mainPart
-      | null terms = "a(n) = 0 for n >= " ++ show (length prefix)
-      | null prefix = "a(n) = " ++ termsPart
-      | otherwise = "a(n) = " ++ termsPart ++ " for n >= " ++ show (length prefix)
-    termsPart = intercalate " + " (map showTerm terms)
-    showTerm term = "(" ++ showSurd (termCoefficient term) ++ ") * (" ++ showSurd (termRoot term) ++ ")^n"
-
-    
--- | Evaluate a closed form at a specific n, to cross-check it against
--- 'recurrenceTermAt'. Returns 'Nothing' if there is no closed form.
-closedFormValueAt :: ClosedFormResult -> Int -> Maybe Rational
-closedFormValueAt (NoClosedForm _) _ = Nothing
-closedFormValueAt (ClosedForm prefix terms) n
-  | n < 0 = Nothing
-  | otherwise =
-      case drop n prefix of
-        prefixValue : _ -> Just prefixValue
-        [] ->
-          case total of
-            Surd _ value 0 -> Just value
-            _ -> Nothing
-  where
-    total = foldl' surdAdd (surdFromRational 0) [ surdMul (termCoefficient term) (surdPow (termRoot term) n) | term <- terms ]

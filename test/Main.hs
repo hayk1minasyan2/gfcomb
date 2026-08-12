@@ -89,7 +89,7 @@ main =
           [ testRecurrenceClosedFormFibonacci,
             testRecurrenceClosedFormAllRationalRoots,
             testRecurrenceClosedFormComplexRootsUnavailable,
-            testRecurrenceClosedFormRepeatedRootUnavailable
+            testRecurrenceClosedFormRepeatedRoot
           ],
         testGroup
           "AlgebraicGF: guarded self-reference and Lagrange inversion"
@@ -696,19 +696,25 @@ testRecurrenceClosedFormComplexRootsUnavailable =
   where
     recurrence = linearRecurrence ((0, 1) :| [(-1, 0)])
 
--- a_n = 4 a_(n-1) - 4 a_(n-2) has a repeated characteristic root (2, with
--- multiplicity 2), which needs an n * 2^n term this module doesn't
--- produce, so it must be reported as unavailable rather than silently
--- wrong.
-testRecurrenceClosedFormRepeatedRootUnavailable :: TestTree
-testRecurrenceClosedFormRepeatedRootUnavailable =
-  testCase "no closed form for a repeated-root recurrence" $
-    case recurrenceClosedForm recurrence of
-      NoClosedForm _ -> pure ()
-      ClosedForm _ terms ->
-        assertFailure ("expected no closed form for a repeated-root recurrence, got: " ++ show terms)
-  where
-    recurrence = linearRecurrence ((4, 1) :| [(-4, 4)])
+-- a_n = 4 a_(n-1) - 4 a_(n-2) has the repeated characteristic root 2, so
+-- its closed form needs an n * 2^n term. With a(0) = 1 and a(1) = 4 the
+-- answer is (1 + n) * 2^n.
+testRecurrenceClosedFormRepeatedRoot :: TestTree
+testRecurrenceClosedFormRepeatedRoot = testCase "repeated-root closed form" $ do
+  let recurrence = linearRecurrence ((4, 1) :| [(-4, 4)])
+      closedForm = recurrenceClosedForm recurrence
+
+  case closedForm of
+    NoClosedForm reason -> assertFailure ("expected a closed form, got: " ++ reason)
+    ClosedForm _ terms ->
+      assertEqual "repeated-root closed form has two terms" 2 (length terms)
+
+  checkClosedFormAgreesWithRecurrence "repeated-root closed form" recurrence closedForm 0 15
+
+  assertEqual
+    "repeated-root closed form display"
+    "a(n) = (1) * (2)^n + (1) * n * (2)^n"
+    (showClosedForm closedForm)
 
 -- Catalan numbers via the general guarded solver, driven by a parsed-style
 -- Expr rather than hand-written Haskell self-reference -- this is the same
