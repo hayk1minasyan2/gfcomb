@@ -14,6 +14,7 @@
 module GFComb.REPL.Parser
   ( -- * Entry points
     parseCommand,
+    parseCommandLine,
     parseEquationRhs,
     parseSeriesExpr,
     parseRecurrenceBody,
@@ -537,6 +538,25 @@ runWholeInput parser input =
 parseCommand :: String -> Either String Command
 parseCommand = runWholeInput command
  
+-- | Parse one line of input that may or may not contain a command.
+--
+-- Returns 'Nothing' for a line with nothing on it: empty, whitespace, or
+-- only a comment. The lexer already skips a comment that follows a
+-- command, but a line that is /only/ a comment leaves nothing behind to
+-- parse, and a file read by @load@ is expected to be full of them.
+--
+-- A line with something unrecognised on it is still an error, and still
+-- reports which commands were expected.
+--
+-- >>> parseCommandLine "  -- just a comment"
+-- Right Nothing
+--
+-- >>> parseCommandLine "list"
+-- Right (Just ListNames)
+parseCommandLine :: String -> Either String (Maybe Command)
+parseCommandLine = runWholeInput (Nothing <$ eof <|> Just <$> command)
+
+
 -- | Parse the right-hand side of an equation definition, given the name
 -- being defined.
 --

@@ -9,7 +9,6 @@ module Main (main) where
 
 import Control.Exception (IOException, try)
 import Control.Monad.IO.Class (liftIO)
-import Data.Char (isSpace)
 import GFComb.REPL.Command (Command)
 import GFComb.REPL.Eval
   ( Env,
@@ -17,7 +16,7 @@ import GFComb.REPL.Eval
     evalCommand,
     initialEnv
   )
-import GFComb.REPL.Parser (parseCommand)
+import GFComb.REPL.Parser (parseCommandLine)
 import System.Console.Haskeline
 
 main :: IO ()
@@ -46,14 +45,10 @@ loop env = do
   maybeLine <- getInputLine "gfcomb> "
   case maybeLine of
     Nothing -> outputStrLn "Goodbye."
-    Just line
-      | isBlank line -> loop env
-      | otherwise -> do
-          (keepGoing, nextEnv) <- runLine Nothing env line
-          if keepGoing then loop nextEnv else outputStrLn "Goodbye."
+    Just line -> do
+      (keepGoing, nextEnv) <- runLine Nothing env line
+      if keepGoing then loop nextEnv else outputStrLn "Goodbye."
 
-isBlank :: String -> Bool
-isBlank = all isSpace
 
 -- Run a single line of input, returning whether to carry on and the
 -- environment to carry on with.
@@ -69,11 +64,12 @@ isBlank = all isSpace
 runLine :: Maybe String -> Env -> String -> InputT IO (Bool, Env)
 runLine origin env line =
   handleInterrupt interrupted . withInterrupt $
-    case parseCommand line of
+    case parseCommandLine line of
       Left problem -> do
         outputStr (label ++ problem)
         pure (True, env)
-      Right parsedCommand -> runCommand env parsedCommand
+      Right Nothing -> pure (True, env)
+      Right (Just parsedCommand) -> runCommand env parsedCommand
   where
     label = maybe "" (++ "\n") origin
     interrupted = do
@@ -106,9 +102,8 @@ runFile env path = do
 
 runFileLines :: Env -> FilePath -> [(Int, String)] -> InputT IO (Bool, Env)
 runFileLines env _ [] = pure (True, env)
-runFileLines env path ((lineNumber, line) : remaining)
-  | isBlank line = runFileLines env path remaining
-  | otherwise = do
+runFileLines env path ((lineNumber, line) : remaining) = 
+  do
       (keepGoing, nextEnv) <- runLine (Just origin) env line
       if keepGoing
         then runFileLines nextEnv path remaining
