@@ -347,7 +347,7 @@ buildRecurrence terms initialValues = do
       forcing = polynomialFromList (map forcingCoefficientFor [0 .. forcingDegree])
 
       missing = [i | i <- requiredIndices, i `notElem` providedIndices]
-      unexpected = nub [i | i <- providedIndices, i `notElem` requiredIndices]
+      unexpected_ = nub [i | i <- providedIndices, i `notElem` requiredIndices]
       duplicated = nub [i | i <- providedIndices, length (filter (== i) providedIndices) > 1]
 
   unless (null duplicated) $
@@ -363,14 +363,14 @@ buildRecurrence terms initialValues = do
           ++ describeIndices missing
       )
 
-  unless (null unexpected) $
+  unless (null unexpected_) $
     fail
       ( "this recurrence has order "
           ++ show order
           ++ ", so only "
           ++ describeIndices requiredIndices
           ++ " are used; remove "
-          ++ describeIndices unexpected
+          ++ describeIndices unexpected_
       )
 
   let valueAt index = fromMaybe 0 (lookup index initialValues)
