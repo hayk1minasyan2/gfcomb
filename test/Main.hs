@@ -140,6 +140,17 @@ main =
             testPolynomialEvaluateDistributesOverAdd,
             testOrder1ClosedFormMatchesTerm,
             testShowExprRoundTrips
+          ],
+        testGroup
+          "Inhomogeneous recurrences"
+          [ testForcedRecurrenceConstant,
+            testForcedRecurrenceLinear,
+            testForcedRecurrenceTriangular,
+            testForcedRecurrenceQuadratic,
+            testForcedRecurrenceZeroForcing,
+            testForcedRecurrenceTrailingZero,
+            testParseForcedRecurrences,
+            testEvalDefineForcedRecurrence
           ]
       ]
 
@@ -1432,3 +1443,203 @@ prop_showExprRoundTrips =
 testShowExprRoundTrips :: TestTree
 testShowExprRoundTrips =
   testProperty "showExpr and the equation parser agree" prop_showExprRoundTrips
+
+----------------------------------------
+-- Inhomogeneous recurrences
+----------------------------------------
+
+-- a(n) = 2*a(n-1) + 1, a(0) = 1: the Tower of Hanoi, and the simplest
+-- recurrence that cannot be written homogeneously at all. Converting it
+-- raises the order from 1 to 2, giving characteristic roots 1 and 2 and
+-- the closed form 2^(n+1) - 1.
+testForcedRecurrenceConstant :: TestTree
+testForcedRecurrenceConstant = testCase "constant forcing term (Tower of Hanoi)" $ do
+  let recurrence = forcedRecurrence ((2, 1) :| []) (polynomialFromList [1])
+
+  assertEqual
+    "the converted recurrence has order 2"
+    2
+    (recurrenceOrder recurrence)
+
+  assertEqual
+    "Tower of Hanoi terms"
+    [1, 3, 7, 15, 31, 63, 127, 255, 511, 1023]
+    (recurrenceTerms 10 recurrence)
+
+  checkClosedFormAgreesWithRecurrence
+    "Tower of Hanoi closed form"
+    recurrence
+    (recurrenceClosedForm recurrence)
+    0
+    15
+
+-- a(n) = 2*a(n-1) + n, a(0) = 0. A forcing term of degree 1 raises the
+-- order by two and introduces the root 1 twice, so this is also a check
+-- that the repeated-root closed form and the conversion work together: the
+-- answer, 2^(n+1) - n - 2, could not be expressed without the n^j terms.
+testForcedRecurrenceLinear :: TestTree
+testForcedRecurrenceLinear = testCase "linear forcing term" $ do
+  let recurrence = forcedRecurrence ((2, 0) :| []) (polynomialFromList [0, 1])
+
+  assertEqual
+    "the converted recurrence has order 3"
+    3
+    (recurrenceOrder recurrence)
+
+  assertEqual
+    "terms of a(n) = 2a(n-1) + n"
+    [0, 1, 4, 11, 26, 57, 120, 247, 502, 1013]
+    (recurrenceTerms 10 recurrence)
+
+  case recurrenceClosedForm recurrence of
+    NoClosedForm reason -> assertFailure ("expected a closed form, got: " ++ reason)
+    ClosedForm _ terms ->
+      assertBool
+        "the closed form contains a term with a power of n"
+        (any ((> 0) . termPower) terms)
+
+  checkClosedFormAgreesWithRecurrence
+    "a(n) = 2a(n-1) + n closed form"
+    recurrence
+    (recurrenceClosedForm recurrence)
+    0
+    15
+
+-- a(n) = a(n-1) + n, a(0) = 0: the triangular numbers, whose closed form
+-- n(n+1)/2 is a polynomial in n with no exponential part at all. The
+-- characteristic root is 1 with multiplicity 3.
+testForcedRecurrenceTriangular :: TestTree
+testForcedRecurrenceTriangular = testCase "triangular numbers" $ do
+  let recurrence = forcedRecurrence ((1, 0) :| []) (polynomialFromList [0, 1])
+
+  assertEqual
+    "triangular numbers"
+    [0, 1, 3, 6, 10, 15, 21, 28, 36, 45]
+    (recurrenceTerms 10 recurrence)
+
+  checkClosedFormAgreesWithRecurrence
+    "triangular closed form"
+    recurrence
+    (recurrenceClosedForm recurrence)
+    0
+    15
+
+-- A quadratic forcing term, on a recurrence of order greater than one, to
+-- check that the conversion does not quietly assume either is small.
+testForcedRecurrenceQuadratic :: TestTree
+testForcedRecurrenceQuadratic = testCase "quadratic forcing term on an order-2 recurrence" $ do
+  let recurrence = forcedRecurrence ((1, 0) :| [(1, 1)]) (polynomialFromList [0, 0, 1])
+
+  assertEqual
+    "the converted recurrence has order 5"
+    5
+    (recurrenceOrder recurrence)
+
+  -- a(n) = a(n-1) + a(n-2) + n^2, computed by hand from a(0)=0, a(1)=1:
+  -- a(2) = 1 + 0 + 4 = 5, a(3) = 5 + 1 + 9 = 15, a(4) = 15 + 5 + 16 = 36,
+  -- a(5) = 36 + 15 + 25 = 76, a(6) = 76 + 36 + 36 = 148.
+  assertEqual
+    "terms of a(n) = a(n-1) + a(n-2) + n^2"
+    [0, 1, 5, 15, 36, 76, 148]
+    (recurrenceTerms 7 recurrence)
+
+-- A zero forcing polynomial must leave the recurrence exactly as it was,
+-- since every homogeneous recurrence is a forced one with f = 0.
+testForcedRecurrenceZeroForcing :: TestTree
+testForcedRecurrenceZeroForcing = testCase "a zero forcing term changes nothing" $
+  assertEqual
+    "forcedRecurrence with a zero forcing polynomial is linearRecurrence"
+    (linearRecurrence ((1, 1) :| [(1, 1)]))
+    (forcedRecurrence ((1, 1) :| [(1, 1)]) polynomialZero)
+
+-- The base recurrence's own last coefficient is zero here, so the
+-- extended denominator normalizes to a shorter coefficient list than the
+-- order it stands for. Without padding those zeros back the converted
+-- recurrence would be an order short, and would describe a different
+-- sequence from the third term onwards.
+testForcedRecurrenceTrailingZero :: TestTree
+testForcedRecurrenceTrailingZero = testCase "forcing a recurrence with a trailing zero coefficient" $ do
+  let recurrence = forcedRecurrence ((3, 1) :| [(0, 7)]) (polynomialFromList [1])
+
+  assertEqual
+    "the converted recurrence keeps its full order"
+    3
+    (recurrenceOrder recurrence)
+
+  -- a(n) = 3*a(n-1) + 0*a(n-2) + 1, from a(0)=1, a(1)=7:
+  -- a(2) = 22, a(3) = 67, a(4) = 202.
+  assertEqual
+    "terms are those of the original inhomogeneous rule"
+    [1, 7, 22, 67, 202]
+    (recurrenceTerms 5 recurrence)
+
+testParseForcedRecurrences :: TestTree
+testParseForcedRecurrences = testCase "recurrences with a forcing term" $ do
+  assertRecurrenceTerms
+    "a constant forcing term"
+    "a(n) = 2*a(n-1) + 1, a(0)=1"
+    [1, 3, 7, 15, 31, 63]
+
+  assertRecurrenceTerms
+    "a bare n"
+    "a(n) = 2*a(n-1) + n, a(0)=0"
+    [0, 1, 4, 11, 26, 57]
+
+  assertRecurrenceTerms
+    "a coefficient on a power of n"
+    "a(n) = a(n-1) + 3*n^2, a(0)=0"
+    [0, 3, 15, 42, 90, 165]
+
+  assertRecurrenceTerms
+    "a subtracted forcing term"
+    "a(n) = a(n-1) - n, a(0)=0"
+    [0, -1, -3, -6, -10, -15]
+
+  assertRecurrenceTerms
+    "a rational coefficient in the forcing term"
+    "a(n) = a(n-1) + 1/2*n, a(0)=0"
+    [0, 1 / 2, 3 / 2, 3, 5, 15 / 2]
+
+  assertRecurrenceTerms
+    "alpha*a(n-1) + beta"
+    "a(n) = 3*a(n-1) + 5, a(0)=2"
+    [2, 11, 38, 119, 362, 1091]
+
+  -- The forcing term does not change the order, so this still needs
+  -- exactly the two initial values its references to earlier terms imply.
+  assertRecurrenceTerms
+    "a forcing term alongside an order-2 recurrence"
+    "a(n) = a(n-1) + a(n-2) + 1, a(0)=0, a(1)=1"
+    [0, 1, 2, 4, 7, 12]
+
+  assertRejected
+    "a right-hand side with no earlier term at all"
+    "must refer to at least one earlier term"
+    (parseRecurrenceBody "a(n) = n + 1")
+
+  assertRejected
+    "the forcing term does not excuse a missing initial value"
+    "this recurrence has order 2"
+    (parseRecurrenceBody "a(n) = a(n-1) + a(n-2) + 1, a(0)=0")
+
+-- Parse a recurrence body and check the sequence it describes.
+assertRecurrenceTerms :: String -> String -> [Rational] -> IO ()
+assertRecurrenceTerms label input expected =
+  case parseRecurrenceBody input of
+    Left problem -> assertFailure (label ++ ": " ++ problem)
+    Right recurrence ->
+      assertEqual label expected (recurrenceTerms (length expected) recurrence)
+
+testEvalDefineForcedRecurrence :: TestTree
+testEvalDefineForcedRecurrence = testCase "defining an inhomogeneous recurrence" $ do
+  (output, env) <- runReplLine initialEnv "define hanoi by recurrence: a(n) = 2*a(n-1) + 1, a(0)=1"
+
+  assertMentioned "a closed form is found" "Closed form:" output
+
+  case envLookup "hanoi" env of
+    Nothing -> assertFailure "'hanoi' should be defined afterwards"
+    Just definition ->
+      assertEqual
+        "its coefficients are the Tower of Hanoi numbers"
+        [1, 3, 7, 15, 31, 63, 127, 255, 511, 1023]
+        (gfTake 10 (definitionSeries definition))
