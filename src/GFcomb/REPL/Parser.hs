@@ -39,7 +39,8 @@ import Data.Ratio ((%))
 import Data.Void (Void)
 import GFComb.AlgebraicGF (Expr (..))
 import GFComb.REPL.Command (Command (..), SeriesExpr (..))
-import GFComb.Recurrence (LinearRecurrence, linearRecurrence)
+import GFComb.Recurrence (LinearRecurrence, forcedRecurrence)
+import GFComb.Polynomial (polynomialFromList)
 import Numeric.Natural (Natural)
 import Text.Megaparsec
 import Text.Megaparsec.Char (alphaNumChar, char, letterChar, space1, string)
@@ -81,7 +82,7 @@ parens = between (symbol "(") (symbol ")")
 reservedWords :: [String]
 reservedWords =
   [ "help", "list", "show", "define", "coeffs", "coeff", "add", "load",
-    "quit", "exit", "by", "as", "solution", "of", "recurrence", "x"
+    "quit", "exit", "by", "as", "solution", "of", "recurrence", "x", "n"
   ]
 
 -- An identifier: a letter followed by letters, digits, or underscores, and
@@ -196,38 +197,61 @@ equationOperators =
  
 
 
--------------------------
+----------------------------------------
 -- Recurrences
--------------------------
- 
+----------------------------------------
+
+-- One term on the right-hand side of a recurrence: either a reference to
+-- an earlier term of the sequence, or a piece of the forcing function.
+--
+-- Keeping the two apart as they are parsed means 'buildRecurrence' can
+-- simply partition the terms, rather than having to work out afterwards
+-- what each one was.
+data RecurrenceTermKind
+  = -- | coefficient * a(n - offset)
+    PastTerm Int Rational
+  | -- | coefficient * n^degree
+    ForcingTerm Int Rational
+  deriving (Eq, Show)
+
 -- | Parse the body of a @by recurrence:@ definition, e.g.
 --
 -- > a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=1
+-- > a(n) = 2*a(n-1) + 1, a(0)=1
+-- > a(n) = 2*a(n-1) + n, a(0)=0
 --
 -- The name used for the sequence (@a@ above) is whatever appears on the
--- left, and every later mention must match it - so @fib(n) = fib(n-1) + ...@
+-- left, and every later mention must match it -- so @fib(n) = fib(n-1) + ...@
 -- works just as well.
+--
+-- Besides references to earlier terms, the right-hand side may contain a
+-- forcing function: any polynomial in @n@, written with numbers and powers
+-- of @n@ (@1@, @n@, @3*n^2@, @1\/2*n@). See
+-- 'GFComb.Recurrence.forcedRecurrence' for how such a recurrence is
+-- turned into an equivalent homogeneous one.
 --
 -- Gaps are allowed: @a(n) = a(n-1) + a(n-3)@ has order 3 with a zero
 -- coefficient for @a(n-2)@. Repeated offsets are summed, so
--- @a(n-1) + a(n-1)@ means a coefficient of 2.
+-- @a(n-1) + a(n-1)@ means a coefficient of 2, and likewise for repeated
+-- powers of n.
 --
--- The number of initial values must match the order exactly. That check
--- happens here rather than later because
--- 'GFComb.Recurrence.linearRecurrence' pairs each coefficient with its
--- initial value, and so cannot represent a mismatch at all.
+-- The number of initial values must match the order exactly -- the order
+-- being the largest offset referred to, which the forcing function does
+-- not affect.
 recurrenceBody :: Parser LinearRecurrence
 recurrenceBody = do
   placeholder <- identifier
   _ <- parens (keyword "n")
   _ <- symbol "="
   terms <- recurrenceTerms placeholder
-  _ <- symbol ","
-  initialValues <- initialValue placeholder `sepBy1` symbol ","
+  -- The initial values are optional here only so that leaving them out
+  -- reaches 'buildRecurrence', which explains what is missing, rather than
+  -- failing with a bare "expecting ','".
+  initialValues <- option [] (symbol "," *> (initialValue placeholder `sepBy1` symbol ","))
   buildRecurrence terms initialValues
- 
--- A sum of terms like @3*a(n-1)@ or @a(n-2)@, with signs.
-recurrenceTerms :: String -> Parser [(Int, Rational)]
+
+-- A sum of terms, with signs.
+recurrenceTerms :: String -> Parser [RecurrenceTermKind]
 recurrenceTerms placeholder = do
   leadingSign <- option 1 ((-1) <$ symbol "-" <|> 1 <$ symbol "+")
   firstTerm <- recurrenceTerm placeholder
@@ -238,16 +262,38 @@ recurrenceTerms placeholder = do
       sign <- ((-1) <$ symbol "-") <|> (1 <$ symbol "+")
       term <- recurrenceTerm placeholder
       pure (applySign sign term)
- 
-    applySign sign (offset, coefficient) = (offset, sign * coefficient)
- 
--- One term: an optional rational coefficient, then @a(n-k)@.
-recurrenceTerm :: String -> Parser (Int, Rational)
+
+    applySign sign term =
+      case term of
+        PastTerm offset coefficient -> PastTerm offset (sign * coefficient)
+        ForcingTerm degree coefficient -> ForcingTerm degree (sign * coefficient)
+
+-- One term: an optional rational coefficient and a @*@, then either
+-- @a(n-k)@ or a power of @n@; or a bare number, which is a forcing term of
+-- degree zero.
+--
+-- 'try' guards the @a(n-k)@ branch because it begins by reading a name: on
+-- @n^2@ the name would be read before anything showed it to be wrong, and
+-- without backtracking the power-of-n branch would never be reached.
+recurrenceTerm :: String -> Parser RecurrenceTermKind
 recurrenceTerm placeholder = do
-  coefficient <- option 1 (try (rationalLiteral <* symbol "*"))
-  offset <- termOffset placeholder
-  pure (offset, coefficient)
- 
+  maybeCoefficient <- optional (try (rationalLiteral <* symbol "*"))
+  case maybeCoefficient of
+    Just coefficient -> try (pastTerm coefficient) <|> forcingPower coefficient
+    Nothing ->
+      try (pastTerm 1)
+        <|> forcingPower 1
+        <|> (ForcingTerm 0 <$> rationalLiteral)
+  where
+    pastTerm coefficient = do
+      offset <- termOffset placeholder
+      pure (PastTerm offset coefficient)
+
+    forcingPower coefficient = do
+      keyword "n"
+      degree <- option 1 (symbol "^" *> naturalLiteral)
+      pure (ForcingTerm (fromIntegral degree) coefficient)
+
 -- The @a(n-k)@ part of a term, returning k.
 termOffset :: String -> Parser Int
 termOffset placeholder = do
@@ -263,7 +309,7 @@ termOffset placeholder = do
             ++ "(n-0)' refers to the term being defined, which would make the recurrence circular"
         )
     pure (fromIntegral offset)
- 
+
 -- One initial value, e.g. @a(0)=1@.
 initialValue :: String -> Parser (Int, Rational)
 initialValue placeholder = do
@@ -272,25 +318,41 @@ initialValue placeholder = do
   _ <- symbol "="
   value <- signedRationalLiteral
   pure (fromIntegral index, value)
- 
+
 -- Turn the parsed terms and initial values into a 'LinearRecurrence',
 -- reporting any mismatch between them.
-buildRecurrence :: [(Int, Rational)] -> [(Int, Rational)] -> Parser LinearRecurrence
+--
+-- The order is decided by the references to earlier terms alone; the
+-- forcing function raises the order of the /equivalent homogeneous/
+-- recurrence, but that is 'GFComb.Recurrence.forcedRecurrence's business,
+-- and the extra initial values it needs are ones it computes rather than
+-- ones the user supplies.
+buildRecurrence :: [RecurrenceTermKind] -> [(Int, Rational)] -> Parser LinearRecurrence
 buildRecurrence terms initialValues = do
-  let order = maximum (map fst terms)
+  let pastTerms = [(offset, coefficient) | PastTerm offset coefficient <- terms]
+      forcingTerms = [(degree, coefficient) | ForcingTerm degree coefficient <- terms]
+
+  when (null pastTerms) $
+    fail "a recurrence must refer to at least one earlier term, such as a(n-1)"
+
+  let order = maximum (map fst pastTerms)
       requiredIndices = [0 .. order - 1]
       providedIndices = map fst initialValues
- 
-      coefficientFor offset = sum [c | (o, c) <- terms, o == offset]
+
+      coefficientFor offset = sum [c | (o, c) <- pastTerms, o == offset]
       coefficients = map coefficientFor [1 .. order]
- 
+
+      forcingDegree = maximum (0 : map fst forcingTerms)
+      forcingCoefficientFor degree = sum [c | (d, c) <- forcingTerms, d == degree]
+      forcing = polynomialFromList (map forcingCoefficientFor [0 .. forcingDegree])
+
       missing = [i | i <- requiredIndices, i `notElem` providedIndices]
-      unexpected_ = nub [i | i <- providedIndices, i `notElem` requiredIndices]
+      unexpected = nub [i | i <- providedIndices, i `notElem` requiredIndices]
       duplicated = nub [i | i <- providedIndices, length (filter (== i) providedIndices) > 1]
- 
+
   unless (null duplicated) $
     fail ("given more than once: " ++ describeIndices duplicated)
- 
+
   unless (null missing) $
     fail
       ( "this recurrence has order "
@@ -300,28 +362,26 @@ buildRecurrence terms initialValues = do
           ++ "; missing "
           ++ describeIndices missing
       )
- 
-  unless (null unexpected_) $
+
+  unless (null unexpected) $
     fail
       ( "this recurrence has order "
           ++ show order
           ++ ", so only "
           ++ describeIndices requiredIndices
           ++ " are used; remove "
-          ++ describeIndices unexpected_
+          ++ describeIndices unexpected
       )
- 
+
   let valueAt index = fromMaybe 0 (lookup index initialValues)
       pairs = zip coefficients (map valueAt requiredIndices)
- 
+
   case NonEmpty.nonEmpty pairs of
     Nothing -> fail "a recurrence must refer to at least one earlier term"
-    Just nonEmptyPairs -> pure (linearRecurrence nonEmptyPairs)
+    Just nonEmptyPairs -> pure (forcedRecurrence nonEmptyPairs forcing)
   where
     describeIndices indices =
       intercalate ", " ["a(" ++ show i ++ ")" | i <- indices]
- 
-
 
 ---------------------------------------
 -- Query expressions
