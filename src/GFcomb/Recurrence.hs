@@ -1,4 +1,5 @@
--- | Homogeneous linear recurrences with constant coefficients: building
+-- | Linear recurrences with constant coefficients, homogeneous or 
+-- with a polynomial forcing term : building
 -- their associated generating function, reading off terms, and -- where
 -- the characteristic polynomial allows it -- an exact closed form for
 -- a(n).
@@ -8,6 +9,7 @@ module GFComb.Recurrence
 
         -- * Construction
         linearRecurrence,
+        forcedRecurrence,
 
         -- * Inspection
         recurrenceOrder,
@@ -41,7 +43,10 @@ import GFComb.Polynomial
       polynomialFromList,
       polynomialCoefficients,
       polynomialDegree,
-      polynomialExtractRationalRoots
+      polynomialExtractRationalRoots,
+      polynomialEvaluate,
+      polynomialMul,
+      polynomialPow
     )
 import GFComb.RationalGF ( RationalGF, rationalGF, rationalGFToGF)
 
@@ -96,6 +101,77 @@ newtype LinearRecurrence = LinearRecurrence (NonEmpty (Rational, Rational))
 linearRecurrence :: NonEmpty (Rational, Rational) -> LinearRecurrence
 linearRecurrence = LinearRecurrence
 
+-- | Construct a linear recurrence with a polynomial forcing term,
+--
+-- > a_n = c1*a_(n-1) + ... + ck*a_(n-k) + f(n)     for n >= k
+--
+-- from the same (coefficient, initial value) pairs 'linearRecurrence'
+-- takes, plus f given as a polynomial in n. Only the k initial values
+-- a_0 .. a_(k-1) are needed, exactly as in the homogeneous case.
+--
+-- The result is an ordinary 'LinearRecurrence', because an inhomogeneous
+-- recurrence with a polynomial forcing term /is/ a homogeneous one of
+-- higher order. Writing the recurrence as
+--
+-- > a_n - c1*a_(n-1) - ... - ck*a_(n-k) = f(n)
+--
+-- and applying the forward difference operator (delta f(n) = f(n+1) - f(n)) d+1 times, 
+-- where d is f's degree, make the right-hand side 0: a polynomial of degree d is killed by
+-- d+1 differences. What is left is homogeneous, with characteristic
+-- polynomial chi(y)*(y-1)^(d+1) - equivalently, denominator
+-- Q(x)*(1-x)^(d+1). Its order is k+d+1, and the d+1 further initial values
+-- it needs are computed here from the original rule.
+--
+-- Everything downstream therefore works unchanged: the generating
+-- function, the terms, and the closed form. The root at 1 that this
+-- introduces, with multiplicity d+1, is exactly why closed forms for these
+-- recurrences need the n^j factors of 'ClosedFormTerm' - which is also
+-- why a forcing term of degree 1 or more gives an answer containing a
+-- polynomial in n, as it should: a_n = 2*a_(n-1) + n comes out as
+-- 2^(n+1) - n - 2.
+--
+-- A zero forcing polynomial gives 'linearRecurrence' back unchanged.
+--
+-- >>> recurrenceTerms 6 (forcedRecurrence (NonEmpty.fromList [(2, 1)]) (polynomialFromList [1]))
+-- [1 % 1,3 % 1,7 % 1,15 % 1,31 % 1,63 % 1]
+forcedRecurrence :: NonEmpty (Rational, Rational) -> Polynomial -> LinearRecurrence
+forcedRecurrence pairs forcing =
+  case polynomialDegree forcing of
+    Nothing -> linearRecurrence pairs
+    Just forcingDegree ->
+      let extendedOrder = order + forcingDegree + 1
+          annihilator =
+            polynomialPow (polynomialFromList [1, -1]) (fromIntegral (forcingDegree + 1))
+          extendedDenominator = polynomialMul denominator_ annihilator
+          -- 'polynomialFromList' drops trailing zeros, so the coefficient
+          -- list read back off the extended denominator can be shorter than
+          -- the order it stands for. Padding restores those zeros: without
+          -- it, a recurrence whose own last coefficient is zero would come
+          -- out one or more orders too short, and so describe a different
+          -- sequence entirely.
+          extendedCoefficients =
+            take
+              extendedOrder
+              (map negate (drop 1 (polynomialCoefficients extendedDenominator)) ++ repeat 0)
+          extendedPairs = zip extendedCoefficients (take extendedOrder forcedValues)
+       in case NonEmpty.nonEmpty extendedPairs of
+            Just nonEmptyPairs -> linearRecurrence nonEmptyPairs
+            Nothing -> linearRecurrence pairs
+  where
+    coefficients = map fst (NonEmpty.toList pairs)
+    initialValues = map snd (NonEmpty.toList pairs)
+    order = length coefficients
+    denominator_ = polynomialFromList (1 : map negate coefficients)
+
+    -- The sequence under the original inhomogeneous rule: the given initial
+    -- values, then each later term from the k before it plus f(n). Defined
+    -- in terms of itself, which terminates because every term it looks back
+    -- at has already been produced.
+    forcedValues = initialValues ++ map nextValue [order ..]
+    nextValue n =
+      sum (zipWith (*) coefficients (reverse (take order (drop (n - order) forcedValues))))
+        + polynomialEvaluate forcing (fromIntegral n)
+        
 -------------------
 -- Inspection
 -----------------------
