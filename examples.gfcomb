@@ -1,0 +1,137 @@
+-- examples.gfcomb -- a tour of what GFComb can do.
+--
+-- Run it from the REPL with:   load examples.gfcomb
+-- Lines beginning with -- are comments and are ignored.
+
+
+-- ---------------------------------------------------------------
+-- 1. The built-in generating functions
+-- ---------------------------------------------------------------
+
+list
+
+coeffs fibonacci 10
+coeffs catalan 8
+coeffs partitions 10
+
+-- A single coefficient, by index, without computing the ones before it.
+coeff fibonacci 30
+
+
+-- ---------------------------------------------------------------
+-- 2. Homogeneous linear recurrences
+-- ---------------------------------------------------------------
+
+-- The name of the sequence on the left is yours to choose.
+define fib by recurrence: a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=1
+
+-- Rational and negative coefficients are fine.
+define geom by recurrence: a(n) = 3*a(n-1) - 2*a(n-2), a(0)=1, a(1)=3
+
+-- A gap: this has order 3, with a zero coefficient for a(n-2).
+define gap by recurrence: a(n) = a(n-1) + a(n-3), a(0)=1, a(1)=1, a(2)=1
+
+-- A repeated characteristic root (2, twice), so the closed form needs an
+-- n * 2^n term: the answer is (1 + n) * 2^n.
+define doubling by recurrence: a(n) = 4*a(n-1) - 4*a(n-2), a(0)=1, a(1)=4
+
+show doubling
+
+-- Not every recurrence has a closed form in this system. The roots here
+-- are +i and -i, which are outside what it represents -- so the terms and
+-- the generating function still come out, but the closed form is refused
+-- rather than approximated.
+define rotate by recurrence: a(n) = -a(n-2), a(0)=1, a(1)=0
+
+coeffs rotate 8
+
+
+-- ---------------------------------------------------------------
+-- 3. Recurrences with a forcing term
+-- ---------------------------------------------------------------
+
+-- The Tower of Hanoi: a(n) = 2a(n-1) + 1. Closed form 2^(n+1) - 1.
+define hanoi by recurrence: a(n) = 2*a(n-1) + 1, a(0)=1
+
+show hanoi
+
+-- A forcing term may be any polynomial in n. This one is 2^(n+1) - n - 2,
+-- and the -n part is exactly what the repeated root at 1 provides.
+define costs by recurrence: a(n) = 2*a(n-1) + n, a(0)=0
+
+show costs
+
+-- The triangular numbers: no exponential part at all, just n(n+1)/2.
+define triangular by recurrence: a(n) = a(n-1) + n, a(0)=0
+
+show triangular
+
+-- The general first-order shape a(n) = alpha*a(n-1) + beta.
+define affine by recurrence: a(n) = 3*a(n-1) + 5, a(0)=2
+
+-- A forcing term alongside a second-order recurrence.
+define fibplus by recurrence: a(n) = a(n-1) + a(n-2) + 1, a(0)=0, a(1)=1
+
+coeffs fibplus 10
+
+
+-- ---------------------------------------------------------------
+-- 4. Sequences given directly by a formula in n
+-- ---------------------------------------------------------------
+
+-- No reference to an earlier term, so no initial values are needed: the
+-- formula already fixes every one.
+define squares by recurrence: a(n) = n^2
+
+define shifted by recurrence: a(n) = 2*n^3 - n + 5
+
+coeffs squares 8
+coeffs shifted 6
+
+
+-- ---------------------------------------------------------------
+-- 5. Combinatorial equations
+-- ---------------------------------------------------------------
+
+-- Binary trees / Catalan numbers. Quadratic in the unknown, so the
+-- generating function is reported symbolically.
+define C as solution of: C = 1 + x*C^2
+
+show C
+
+-- Motzkin numbers, also quadratic: 1, 1, 2, 4, 9, 21, 51, ...
+define M as solution of: M = 1 + x*M + x^2*M^2
+
+show M
+
+-- Two separate x terms, which are recognised together as x*(Y + Y^2).
+define S as solution of: S = 1 + x*S + x*S^2
+
+coeffs S 8
+
+-- Ternary trees. A cubic equation still gives every coefficient, but has
+-- no closed form of the shape this system produces.
+define T as solution of: T = 1 + x*T^3
+
+show T
+
+
+-- ---------------------------------------------------------------
+-- 6. Combining what has been defined
+-- ---------------------------------------------------------------
+
+-- add A B is shorthand for the first ten coefficients of A + B.
+add fib C
+
+-- Expressions may use + - * / ^ and the variable x.
+coeffs fib + catalan 8
+coeffs C*T 6
+coeffs C^2 6
+coeffs 1/(1 - x) 6
+coeffs 1/(1 - x - x^2) 10
+coeffs (1 + x)^5 8
+
+-- Everything is exact, so rational coefficients stay rational.
+coeffs 1/(2 - x) 6
+
+list

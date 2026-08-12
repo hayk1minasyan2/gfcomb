@@ -2,50 +2,54 @@
 
 A Haskell library and REPL for combinatorial generating functions.
 
-- Formal power series over the rationals, with exact rational arithmetic throughout — no floating point anywhere.
-- Linear recurrences: their generating functions, their terms, and exact closed forms via partial fractions over a `p + q*sqrt(d)` extension of the rationals.
+- Formal power series over the rationals, with exact arithmetic throughout — no floating point anywhere.
+- Linear recurrences: their generating functions, their terms, and exact closed forms via a `p + q*sqrt(d)` extension of the rationals. Homogeneous, or with a polynomial forcing term.
 - Combinatorial specifications given as functional equations (`C = 1 + x*C^2`), solved for coefficients by guarded self-reference, for individual coefficients by Lagrange inversion, and — when the equation is quadratic in the unknown — for a symbolic closed form.
 - A REPL for defining and querying generating functions interactively.
 
 ## Build
-
+ 
 ```
 cabal build all
 ```
-
+ 
 ## Run tests
-
+ 
 ```
 cabal test
 ```
-
-The test suite is built on `tasty`, combining example-based unit tests (`tasty-hunit`) with property-based tests (`tasty-quickcheck`) that check the algebraic laws the library should satisfy — commutativity, associativity, identities, closed-form solutions against directly computed recurrence terms, and that printing an equation and parsing it back returns the original.
-
+ 
+The test suite is built on `tasty`, combining example-based unit tests (`tasty-hunit`) with property-based tests (`tasty-quickcheck`) that check the algebraic laws the library should satisfy — commutativity, associativity, identities, closed forms against directly computed recurrence terms, and that printing an equation and parsing it back returns the original.
+ 
 ## Run the documentation examples
-
+ 
 The `>>>` examples in the Haddock comments are executable and checked with `doctest`:
-
+ 
 ```
 cabal install doctest --overwrite-policy=always
 cabal repl --with-ghc=doctest
 ```
-
+ 
 ## Run the REPL
-
+ 
 ```
 cabal run gfcomb
 ```
 
+Then, for a tour of everything below:
+ 
+```
+> load examples.gfcomb
+```
+ 
 Command history is kept in `.gfcomb_history` in the working directory, so it survives between sessions. Ctrl-D leaves; Ctrl-C abandons a long-running command without ending the session.
-
+ 
 ## REPL commands
 
-### Defining
+### Defining by a recurrence
 
-A generating function can be defined in either of two ways, matching the two solvers in the library.
-
-**By a linear recurrence.** The name of the sequence on the left is yours to choose, and every mention must match it:
-
+The name of the sequence on the left is yours to choose, and every mention must match it:
+ 
 ```
 > define fib by recurrence: a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=1
 Generating function: 1 / (1 - x - x^2)
@@ -53,11 +57,35 @@ Closed form: a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*s
 First 10 coefficients: [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
 ```
 
-Coefficients may be rational and may be negative (`3*a(n-1) - 2*a(n-2)`). Gaps are allowed: `a(n) = a(n-1) + a(n-3)` has order 3 with a zero coefficient for `a(n-2)`. Every initial value `a(0)` through `a(k-1)` must be given, where `k` is the order.
+Coefficients may be rational and may be negative (`3*a(n-1) - 2*a(n-2)`). Gaps are allowed: `a(n) = a(n-1) + a(n-3)` has order 3 with a zero coefficient for `a(n-2)`. Every initial value `a(0)` through `a(k-1)` must be given, where `k` is the largest offset referred to.
 
-A closed form is found when the characteristic polynomial factors into distinct roots that are rational, or rational plus one irreducible quadratic factor. Repeated roots would need an extra `n * r^n` term, and complex roots are outside what this represents; both are reported rather than silently approximated.
+**Forcing terms.** The right-hand side may also contain any polynomial in `n`:
 
-**By a functional equation.** The name being defined appears on both sides:
+```
+> define hanoi by recurrence: a(n) = 2*a(n-1) + 1, a(0)=1
+Generating function: 1 / (1 - 3x + 2x^2)
+Closed form: a(n) = (-1) + (2) * (2)^n
+First 10 coefficients: [1, 3, 7, 15, 31, 63, 127, 255, 511, 1023]
+```
+
+Such a recurrence is not solved by a separate method: a polynomial forcing term of degree `d` is annihilated by `d+1` differences, so the recurrence is *equivalent* to a homogeneous one of order `k+d+1`, and that is what gets built. This is why `a(n) = 2*a(n-1) + n` comes out as `2^(n+1) - n - 2` — the extra root at 1 is what contributes the polynomial part.
+
+The forcing term does not change how many initial values are needed; the extra ones the converted recurrence requires are computed rather than asked for.
+
+**Formulas.** With no reference to an earlier term at all, the right-hand side is simply a formula, and no initial values are given because the formula already fixes every value:
+
+```
+> define squares by recurrence: a(n) = n^2
+Generating function: (x + x^2) / (1 - 3x + 3x^2 - x^3)
+Closed form: a(n) = (1) * n^2
+First 10 coefficients: [0, 1, 4, 9, 16, 25, 36, 49, 64, 81]
+```
+
+**When a closed form exists.** One is produced whenever the characteristic polynomial factors, over the rationals, into linear factors and at most one irreducible quadratic factor. Repeated rational roots are fine — they contribute `n^j` terms, as in `(1 + n) * 2^n`. Complex roots, a repeated *irrational* root, and irreducible factors of degree three or more are reported as unavailable rather than approximated. The generating function and the terms are always available regardless.
+
+### Defining by a functional equation
+
+The name being defined appears on both sides:
 
 ```
 > define C as solution of: C = 1 + x*C^2
@@ -112,20 +140,41 @@ A file read by `load` may contain `--` line comments, and may itself contain a `
 
 ### Built-ins
 
-`fibonacci`, `catalan`, `binaryTrees`, `ternaryTrees` and `partitions` are defined from the start — no import step, they are simply already in scope:
+`fibonacci`, `catalan`, `binaryTrees`, `ternaryTrees` and `partitions` are defined from the start:
 
 ```
 > coeffs partitions 10
 [1, 1, 2, 3, 5, 7, 11, 15, 22, 30]
 ```
 
+## What is and is not supported
+
+Everything below is reported clearly rather than silently approximated or wrongly answered.
+
+Supported:
+
+- linear recurrences of any order with rational coefficients, homogeneous or with a polynomial forcing term of any degree, and sequences given directly by a polynomial in `n`
+- their generating functions and terms, always
+- their closed forms, when the characteristic polynomial factors into rational roots (repeated allowed) plus at most one irreducible quadratic factor
+- guarded functional equations `Y = phi(x, Y)` of any degree in `Y`, for coefficients
+- Lagrange inversion for equations of the form `Y = c + x*phi(Y)`
+- symbolic closed forms for equations quadratic in the unknown
+Not supported:
+ 
+- complex characteristic roots, repeated irrational roots, or irreducible factors of degree three or more
+- non-polynomial forcing terms such as `2^n` or `n!`
+- closed forms for cubic and higher algebraic equations (Cardano's and Ferrari's formulas are out of scope; the quintic has no general radical form at all)
+- multivariate or exponential generating functions, and nonlinear or variable-coefficient recurrences
+One deliberate asymmetry: the REPL prints closed forms containing `sqrt(...)`, which the query language cannot read back, since it has no square-root operator.
+ 
 ## Using GFComb as a library
-
+ 
 The REPL is a thin layer over the library, which can be used directly:
-
+ 
 ```haskell
 import Data.List.NonEmpty ((:|))
 import GFComb.Core
+import GFComb.Polynomial
 import GFComb.Recurrence
 
 main :: IO ()
@@ -134,10 +183,14 @@ main = do
   let x = gfVariable
   print (gfTake 5 ((gfOne + x) * (gfOne + x)))
 
-  -- A generating function from a linear recurrence
+  -- A generating function from a homogeneous recurrence
   let fibonacciRecurrence = linearRecurrence ((1, 1) :| [(1, 1)])
   print (recurrenceTerms 10 fibonacciRecurrence)
   putStrLn (showClosedForm (recurrenceClosedForm fibonacciRecurrence))
+
+  -- The Tower of Hanoi: a(n) = 2*a(n-1) + 1, a(0) = 1
+  let hanoi = forcedRecurrence ((2, 1) :| []) (polynomialFromList [1])
+  print (recurrenceTerms 10 hanoi)
 ```
 
 `GFComb.Polynomial` provides finite polynomials with exact rational coefficients and rational root finding; `GFComb.RationalGF` the quotient `P(x)/Q(x)`; `GFComb.AlgebraicGF` functional equations, Lagrange inversion, and symbolic rendering; `GFComb.Builtins` the predefined entries. The REPL's own parser and evaluator live in `GFComb.REPL.*` and are usable independently of the interactive loop.
@@ -157,6 +210,7 @@ src/GFComb/REPL/Parser.hs    megaparsec parser for commands and expressions
 src/GFComb/REPL/Eval.hs      Environment and command evaluation
 app/REPL.hs                  haskeline input loop
 test/Main.hs                 Unit and property-based tests
+examples.gfcomb              A tour of the REPL, for use with load
 gfcomb.cabal
 ```
 

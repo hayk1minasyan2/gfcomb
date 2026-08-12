@@ -379,7 +379,18 @@ helpLines =
     "",
     "In a recurrence, the name on the left is yours to choose, and gaps are",
     "allowed: a(n) = a(n-1) + a(n-3) has order 3 with a zero coefficient for",
-    "a(n-2). Every initial value a(0) .. a(k-1) must be given.",
+    "a(n-2). Every initial value a(0) .. a(k-1) must be given, where k is the",
+    "largest offset referred to.",
     "",
-    "Multiplication must be written explicitly: x*C^2, not xC^2."
+    "The right-hand side may also contain a polynomial in n:",
+    "  define hanoi by recurrence: a(n) = 2*a(n-1) + 1, a(0)=1",
+    "  define costs by recurrence: a(n) = 2*a(n-1) + n, a(0)=0",
+    "",
+    "With no reference to an earlier term it is simply a formula, and takes",
+    "no initial values, since every value is already determined:",
+    "  define squares by recurrence: a(n) = n^2",
+    "",
+    "Multiplication must be written explicitly: x*C^2, not xC^2.",
+    "",
+    "Try 'load examples.gfcomb' for a tour."
   ]
