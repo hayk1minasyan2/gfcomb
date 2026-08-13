@@ -57,6 +57,12 @@ data Command
     -- coefficient with its initial value and so cannot represent a
     -- mismatch at all.
     DefineByRecurrence String LinearRecurrence
+  | -- | @define S = x^2/(1 - x)@ — define a name by an explicit formula.
+    --
+    -- The expression may refer to the name being defined, provided it does
+    -- so linearly: @S = 1 + A*S@ is solved as @S = A\/(1 - A)@. Anything of
+    -- higher degree belongs to 'DefineByEquation'.
+    DefineByFormula String SeriesExpr
   | -- | @coeffs fib 10@ -- the first N coefficients of an expression.
     Coeffs SeriesExpr Int
   | -- | @coeff fib 20@ -- the exact coefficient of @x^N@.
