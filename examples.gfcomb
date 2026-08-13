@@ -1,7 +1,7 @@
--- examples.gfcomb -- a tour of what GFComb can do.
+-- examples.gfcomb - a tour of what GFComb can do.
 --
 -- Run it from the REPL with:   load examples.gfcomb
--- Lines beginning with -- are comments and are ignored.
+-- Lines beginning with "--" are comments and are ignored.
 
 
 -- ---------------------------------------------------------------
@@ -38,7 +38,7 @@ define doubling by recurrence: a(n) = 4*a(n-1) - 4*a(n-2), a(0)=1, a(1)=4
 show doubling
 
 -- Not every recurrence has a closed form in this system. The roots here
--- are +i and -i, which are outside what it represents -- so the terms and
+-- are +i and -i, which are outside what it represents - so the terms and
 -- the generating function still come out, but the closed form is refused
 -- rather than approximated.
 define rotate by recurrence: a(n) = -a(n-2), a(0)=1, a(1)=0
@@ -135,3 +135,297 @@ coeffs (1 + x)^5 8
 coeffs 1/(2 - x) 6
 
 list
+
+
+-- ---------------------------------------------------------------
+-- 7. Problems from the Combinatorics and Graph Theory 1 course
+--    (Zdenek Dvorak, KG1 lecture notes)
+-- ---------------------------------------------------------------
+
+-- Lesson 1, Examples 1 and 2 (page 3).
+-- What is the number a_n of strings of length n over {a, b} such that no
+-- two letters a are consecutive? a_0 = 1 (the empty string), a_1 = 2 (a
+-- and b), a_2 = 3 (ab, ba, bb), a_3 = 5 (aba, abb, bab, bba, bbb).
+-- An aa-avoiding string of length n ending in b comes from one of length
+-- n-1 by appending b; one ending in a must end in ba, so it comes from one
+-- of length n-2. Hence a_n = a(n-1) + a(n-2) - the Fibonacci recurrence,
+-- with its own initial values.
+define aa_avoiding by recurrence: a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=2
+
+show aa_avoiding
+
+-- The notes derive A(x) = (1 + x)/(1 - x - x^2) by hand (pages 5-6). The
+-- same generating function, written out directly:
+coeffs (1 + x)/(1 - x - x^2) 10
+
+
+-- Lesson 1, Example 5 (pages 4-5), and Lesson 2, Homework 2.3 Problem 2
+-- (page 16).
+-- Let b_n be the number of ways to write n as an ordered sum of integers
+-- greater than one. b_2 = 1, b_3 = 1, b_4 = 2, b_5 = 3, b_6 = 5. The
+-- notes prove b_n = a_(n-3) by a bijection with aa-avoiding strings.
+-- Homework 2.3 reaches the same sequence algebraically: the class S of
+-- such sums satisfies S = {""} + S_1 x S with S_1 = x^2/(1-x), giving
+-- S(x) = (1 - x)/(1 - x - x^2).
+coeffs (1 - x)/(1 - x - x^2) 10
+
+
+-- Lesson 1, Homework 1.3, Problems 1 and 2 (page 8).
+-- Let c_n be the number of strings of length n over {a, b, c} containing
+-- none of the substrings aa, ab, ba, bb. c_0 = 1, c_1 = 3, c_2 = 5,
+-- c_3 = 11, and c_n = c(n-1) + 2c(n-2).
+-- Problem 2 asks for c_n = Theta(2^n): the closed form shows exactly why,
+-- since the characteristic roots are 2 and -1 and the 2^n term dominates.
+define no_ab_pairs by recurrence: a(n) = a(n-1) + 2*a(n-2), a(0)=1, a(1)=3
+
+show no_ab_pairs
+
+
+-- Lesson 1, Tutorial 1.4, Problem 1 (page 9).
+-- Explicit generating functions for a list of simple sequences.
+
+-- 1, 2, 5, 0, 0, 0, ...  -- a finite sequence is just a polynomial
+coeffs 1 + 2*x + 5*x^2 6
+
+-- 1, 1, 1, 1, ...
+coeffs 1/(1 - x) 6
+
+-- 0, 1, 0, 1, ...
+coeffs x/(1 - x^2) 8
+
+-- 2, -3, 2, -3, ...
+coeffs (2 - 3*x)/(1 - x^2) 8
+
+-- 0, 1, 2, 3, 4, ...  -- given as a formula rather than a recurrence
+define naturals by recurrence: a(n) = n
+
+show naturals
+
+-- 0*2^0, 1*2^1, 2*2^2, 3*2^3, ...  -- not a polynomial in n, so it is
+-- entered as its generating function 2x/(1 - 2x)^2 instead
+coeffs 2*x/(1 - 2*x)^2 8
+
+-- 0^2, 1^2, 2^2, 3^2, ...
+define squares_of_n by recurrence: a(n) = n^2
+
+-- 2^2, 3^2, 4^2, 5^2, ...  -- the same sequence shifted, as (n+2)^2
+define shifted_squares by recurrence: a(n) = n^2 + 4*n + 4
+
+coeffs shifted_squares 8
+
+
+-- Lesson 1, Tutorial 1.4, Problems 2 and 3 (page 9).
+-- If B(x) is the generating function of b_n, then B(x)/(1-x) is the
+-- generating function of the partial sums b_0, b_0+b_1, b_0+b_1+b_2, ...
+-- Problem 3 applies this to find a formula for the sum of 3^k for
+-- k = 0 .. n. Dividing 1/(1-3x) by (1-x) gives the partial sums directly:
+coeffs 1/((1 - 3*x)*(1 - x)) 8
+
+-- The same sequence as a recurrence with a constant forcing term, which
+-- also produces the closed form (3^(n+1) - 1)/2:
+define geometric_sums by recurrence: a(n) = 3*a(n-1) + 1, a(0)=1
+
+show geometric_sums
+
+
+-- Lesson 1, Tutorial 1.4, Problem 4 (page 9).
+-- e_0 = 5, e_1 = 0, and e_n = e(n-1) + 6e(n-2) for n >= 2. Find the
+-- generating function and an explicit formula. The characteristic roots
+-- are 3 and -2, giving e_n = 2*3^n + 3*(-2)^n.
+define e_seq by recurrence: a(n) = a(n-1) + 6*a(n-2), a(0)=5, a(1)=0
+
+show e_seq
+
+
+-- Lesson 1, Tutorial 1.4, Problem 5 (page 9).
+-- Let t_n be the number of ways to cover a 2 x n rectangle with 2x1, 1x2
+-- and 2x2 pieces. A first column is either one vertical 2x1 piece
+-- (leaving 2 x (n-1)), or two horizontal 1x2 pieces, or one 2x2 piece
+-- (each leaving 2 x (n-2)), so t_n = t(n-1) + 2t(n-2). These are the
+-- Jacobsthal numbers, t_n = (2^(n+1) + (-1)^n)/3.
+define tilings by recurrence: a(n) = a(n-1) + 2*a(n-2), a(0)=1, a(1)=1
+
+show tilings
+
+
+-- Lesson 2, Example 13 (page 14).
+-- Let c_n be the number of correctly matched strings of n opening and n
+-- closing brackets. Every non-empty such string is uniquely (s1)s2 with
+-- s1 and s2 correctly matched, so the class satisfies
+-- C = {""} + {"()"} x C x C, and hence C(x) = 1 + x*C(x)^2.
+-- Lesson 3 (page 20) then extracts c_n = binom(2n, n)/(n+1).
+define brackets as solution of: brackets = 1 + x*brackets^2
+
+show brackets
+
+-- Lesson 2, Homework 2.3, Problem 1 (page 16).
+-- B(x) = (1 + x^5)/(1 - 3x - x^2). The homework asks for the radius of
+-- convergence and the bounds it gives; the coefficients themselves come
+-- straight out:
+coeffs (1 + x^5)/(1 - 3*x - x^2) 10
+
+-- Lesson 2, Tutorial 2.4, Problem 3 (page 17).
+-- For a positive integer m, let S_m be the class of strings over a single
+-- letter whose length is divisible by m. Its generating function is
+-- 1/(1 - x^m). For m = 3:
+coeffs 1/(1 - x^3) 10
+
+-- Lesson 2, Tutorial 2.4, Problem 4 (page 17).
+-- Let p_n be the number of ways to pay n CZK with 1, 2 and 5 CZK coins.
+-- The counting sequence is that of S_1 x S_2 x S_5, so
+-- P(x) = 1/((1-x)(1-x^2)(1-x^5)).
+coeffs 1/((1 - x)*(1 - x^2)*(1 - x^5)) 12
+
+
+-- Lesson 3, Tutorial 3.5, Problem 2 (page 26).
+-- d_0 = 1, d_1 = 5, d_2 = 17, and d_n = 7d(n-1) - 16d(n-2) + 12d(n-3).
+-- Its characteristic polynomial is y^3 - 7y^2 + 16y - 12 = (y-2)^2(y-3),
+-- so the root 2 is repeated and the closed form needs an n*2^n term:
+-- d_n = n*2^n + 3^n.
+define d_seq by recurrence: a(n) = 7*a(n-1) - 16*a(n-2) + 12*a(n-3), a(0)=1, a(1)=5, a(2)=17
+
+show d_seq
+
+
+-- Lesson 3, Tutorial 3.5, Problem 3 (page 26).
+-- A ternary tree is empty or a root with three ternary subtrees, so
+-- T(x) = 1 + x*T(x)^3. A cubic equation still yields every coefficient,
+-- though no closed form of the shape this system produces.
+define ternary as solution of: ternary = 1 + x*ternary^3
+
+show ternary
+
+
+-- ---------------------------------------------------------------
+-- 8. Problems from the Combinatorics and Graph Theory 2 course
+-- ---------------------------------------------------------------
+
+-- CGT2, Example 1.
+-- Let s_n be the number of strings of length n over the digits 1, 2, 3
+-- containing no two consecutive 1s. Such a string is empty or a single 1
+-- (generating function 1 + x), or one of '2', '3', '12', '13' followed by
+-- another such string (generating function 2x + 2x^2). Hence
+--   S = 1 + x + (2x + 2x^2)S,   so   S = (1 + x)/(1 - 2x - 2x^2).
+-- Reading the denominator back as a recurrence gives s_n = 2s(n-1) +
+-- 2s(n-2), with s_0 = 1 and s_1 = 3. Its characteristic roots are the
+-- irrational pair 1 +- sqrt(3), so the exact formula the example says
+-- "we could now obtain" is produced here directly.
+define no_double_one by recurrence: a(n) = 2*a(n-1) + 2*a(n-2), a(0)=1, a(1)=3
+
+show no_double_one
+
+-- The generating function as the example writes it, for comparison:
+coeffs (1 + x)/(1 - 2*x - 2*x^2) 8
+
+
+-- CGT2, Example 2 -- Lagrange inversion.
+-- Let t_n be the number of rooted trees with n vertices in which every
+-- non-leaf vertex has exactly 2 or 3 children. Such a tree is a single
+-- vertex, or a vertex with two such subtrees, or a vertex with three, so
+--   T = x + x*T^2 + x*T^3 = x*(1 + T^2 + T^3).
+-- The example notes this makes T the inverse of f(y) = y/(1 + y^2 + y^3),
+-- and that it is not obvious how to turn that into a formula for t_n.
+--
+-- This is exactly the shape Lagrange inversion applies to: T = c + x*phi(T)
+-- with c = 0 and phi(y) = 1 + y^2 + y^3. The 'Lagrange form' line below
+-- reports that the equation was recognised as such. Lagrange inversion
+-- gives the n-th coefficient on its own, without computing any of the
+-- earlier ones -- a genuinely different route from the guarded
+-- self-reference used to list them.
+--
+-- The first terms are 0, 1, 0, 1, 1, 2, 5, 8, 21, 42: t_1 = 1 is the
+-- single vertex, t_2 = 0 because a root needing two or three children
+-- cannot fit in two vertices, and t_3 = 1 is the root with two leaves.
+define trees23 as solution of: trees23 = x*(1 + trees23^2 + trees23^3)
+
+show trees23
+
+coeffs trees23 12
+
+-- A coefficient far enough out to be worth reaching for directly:
+coeff trees23 20
+
+
+
+-- ---------------------------------------------------------------
+-- 9. Naming a generating function directly
+-- ---------------------------------------------------------------
+
+-- The third define form gives a name to a generating function written out
+-- as a formula, using the same expression language as coeffs. Nothing new
+-- is computed here that coeffs could not already show - what is new is
+-- that the result can be named, and so used again.
+define geometric = 1/(1 - x)
+
+show geometric
+
+-- A formula may name anything already defined, so a specification can be
+-- assembled a piece at a time.
+define twice = geometric*geometric
+
+coeffs twice 8
+
+-- Lesson 2, Tutorial 2.4, Problem 4 (page 17), rewritten.
+-- The class of ways to pay n CZK with 1, 2 and 5 CZK coins is
+-- S_1 x S_2 x S_5, and each factor has generating function 1/(1 - x^m).
+-- Naming the factors follows the structure of the argument rather than
+-- collapsing it into one expression.
+define coins1 = 1/(1 - x)
+define coins2 = 1/(1 - x^2)
+define coins5 = 1/(1 - x^5)
+define pay = coins1*coins2*coins5
+
+show pay
+
+coeffs pay 12
+
+
+-- Lesson 1, Example 5 (pages 4-5) and Lesson 2, Homework 2.3 Problem 2
+-- (page 16), stated the way the notes state it.
+-- The class S of ordered sums of integers greater than one satisfies
+--   S = {""} + S_1 x S,      where S_1 = x^2/(1-x)
+-- and {""} has generating function 1. This is the sequence construction:
+-- the definition refers to itself, but only linearly, so it needs no
+-- fixed point -- rearranged, S*(1 - S_1) = 1, and the closed form comes
+-- out as 1/(1 - S_1).
+define sums1 = x^2/(1 - x)
+
+show sums1
+
+define sums = 1 + sums1*sums
+
+show sums
+
+-- The same sequence the notes derive by hand as (1 - x)/(1 - x - x^2):
+coeffs sums 10
+
+
+-- CGT2, Example 1, stated the way the example states it.
+-- A string over {1, 2, 3} with no two consecutive 1s is empty or a single
+-- 1 (generating function 1 + x), or one of '2', '3', '12', '13' followed
+-- by another such string (generating function 2x + 2x^2):
+--   S = 1 + x + (2x + 2x^2)S
+-- which is again linear in S, so it is solved rather than iterated. The
+-- example then says "we could now obtain an exact formula for the
+-- coefficients"; the recurrence form in section 8 above does exactly that.
+define strings123 = 1 + x + (2*x + 2*x^2)*strings123
+
+show strings123
+
+coeffs strings123 8
+
+
+-- A formula that refers to itself non-linearly is refused, since
+-- rearranging no longer removes the unknown. The message points to the
+-- form that does handle it. Uncomment the next line to see:
+-- define bad = 1 + x*bad^2
+
+-- That equation belongs to the other form, where it is Catalan's:
+define bad_done_right as solution of: bad_done_right = 1 + x*bad_done_right^2
+
+coeffs bad_done_right 8
+
+
+-- Every definition, however it was made, is kept and can be used again.
+list
+
