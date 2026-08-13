@@ -52,7 +52,7 @@ The name of the sequence on the left is yours to choose, and every mention must 
  
 ```
 > define fib by recurrence: a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=1
-Generating function: 1 / (1 - x - x^2)
+Generating function closed form: 1 / (1 - x - x^2)
 Closed form: a(n) = (1/2 + 1/10*sqrt(5)) * (1/2 + 1/2*sqrt(5))^n + (1/2 - 1/10*sqrt(5)) * (1/2 - 1/2*sqrt(5))^n
 First 10 coefficients: [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
 ```
@@ -63,7 +63,7 @@ Coefficients may be rational and may be negative (`3*a(n-1) - 2*a(n-2)`). Gaps a
 
 ```
 > define hanoi by recurrence: a(n) = 2*a(n-1) + 1, a(0)=1
-Generating function: 1 / (1 - 3x + 2x^2)
+Generating function closed form: 1 / (1 - 3x + 2x^2)
 Closed form: a(n) = (-1) + (2) * (2)^n
 First 10 coefficients: [1, 3, 7, 15, 31, 63, 127, 255, 511, 1023]
 ```
@@ -76,7 +76,7 @@ The forcing term does not change how many initial values are needed; the extra o
 
 ```
 > define squares by recurrence: a(n) = n^2
-Generating function: (x + x^2) / (1 - 3x + 3x^2 - x^3)
+Generating function closed form: (x + x^2) / (1 - 3x + 3x^2 - x^3)
 Closed form: a(n) = (1) * n^2
 First 10 coefficients: [0, 1, 4, 9, 16, 25, 36, 49, 64, 81]
 ```
@@ -90,9 +90,16 @@ The name being defined appears on both sides:
 ```
 > define C as solution of: C = 1 + x*C^2
 Defined by: C = 1 + x*C^2
-Generating function: (1 - sqrt(1 - 4x)) / (2x)
+Generating function closed form: (1 - sqrt(1 - 4x)) / (2x)
+Lagrange form: C = 1 + x*phi, with phi = C^2
 First 10 coefficients: [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
 ```
+
+An equation of the shape `Y = c + x*phi(Y)` is reported as such, because
+Lagrange inversion applies to it: the n-th coefficient can be had on its
+own, without computing any of the earlier ones. That is a genuinely
+different route to the same numbers from the guarded self-reference used
+to list them.
 
 Every occurrence of the name on the right must be multiplied by `x`, so that each coefficient depends only on earlier ones. `C = 1 + x*C^2` is fine; `C = 1 + C^2` is refused, since solving it would require knowing `C`'s first coefficient before computing it.
 
@@ -101,9 +108,50 @@ Equations of any degree give coefficients. A symbolic generating function is onl
 ```
 > define T as solution of: T = 1 + x*T^3
 Defined by: T = 1 + x*T^3
-Generating function: no closed form available -- the equation is not quadratic in the unknown, so it has no closed form of this shape (coefficients can still be computed)
+Generating function closed form: not available -- the equation is not quadratic in the unknown, so it has no closed form of this shape (coefficients can still be computed)
+Lagrange form: T = 1 + x*phi, with phi = T^3
 First 10 coefficients: [1, 1, 3, 12, 55, 273, 1428, 7752, 43263, 246675]
 ```
+
+### Defining by an explicit formula
+ 
+A name can also be given a generating function outright, using the same
+expression language as `coeffs`:
+ 
+```
+> define pay = 1/((1 - x)*(1 - x^2)*(1 - x^5))
+Generating function closed form: 1/((1 - x)*(1 - x^2)*(1 - x^5))
+First 10 coefficients: [1, 1, 2, 2, 3, 4, 5, 6, 7, 8]
+```
+ 
+The expression may name anything already defined, so a specification can
+be built up a piece at a time rather than written out in one go.
+ 
+It may also refer to **the name being defined**, provided it does so
+linearly. That is the sequence construction, and it needs no fixed point:
+`S = A + B*S` rearranges to `S*(1 - B) = A`, so
+ 
+```
+> define sums = x^2/(1 - x)
+Generating function closed form: x^2/(1 - x)
+First 10 coefficients: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1]
+ 
+> define S = 1 + sums*S
+Defined by: S = 1 + sums*S
+Generating function closed form: 1/(1 - sums)
+First 10 coefficients: [1, 0, 1, 1, 2, 3, 5, 8, 13, 21]
+```
+ 
+which is the class of ordered sums of integers greater than one, written
+the way a combinatorial specification usually is.
+ 
+A formula that refers to itself non-linearly — `S = 1 + x*S^2`, say — is
+refused, with a pointer to `as solution of:`, which solves that shape by
+guarded self-reference instead. The two forms divide the work: `=` handles
+equations whose coefficients are themselves series but which are linear in
+the unknown, and `as solution of:` handles equations of any degree in the
+unknown but whose coefficients are polynomials in `x`.
+ 
 
 ### Querying
 
@@ -158,13 +206,21 @@ Supported:
 - their closed forms, when the characteristic polynomial factors into rational roots (repeated allowed) plus at most one irreducible quadratic factor
 - guarded functional equations `Y = phi(x, Y)` of any degree in `Y`, for coefficients
 - Lagrange inversion for equations of the form `Y = c + x*phi(Y)`
+- generating functions named directly by a formula, including
+  specifications that refer to themselves linearly, as in the sequence
+  construction `S = 1 + A*S`
 - symbolic closed forms for equations quadratic in the unknown
+
 Not supported:
  
 - complex characteristic roots, repeated irrational roots, or irreducible factors of degree three or more
 - non-polynomial forcing terms such as `2^n` or `n!`
 - closed forms for cubic and higher algebraic equations (Cardano's and Ferrari's formulas are out of scope; the quintic has no general radical form at all)
 - multivariate or exponential generating functions, and nonlinear or variable-coefficient recurrences
+- specifications that refer to themselves non-linearly while also using
+  another named series as a coefficient, such as `S = 1 + A*S^2` for a
+  series `A` — the `as solution of:` form covers this shape only when the
+  coefficients are polynomials in `x`
 One deliberate asymmetry: the REPL prints closed forms containing `sqrt(...)`, which the query language cannot read back, since it has no square-root operator.
  
 ## Using GFComb as a library
