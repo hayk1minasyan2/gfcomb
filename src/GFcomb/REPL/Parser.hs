@@ -456,7 +456,7 @@ defineCommand :: Parser Command
 defineCommand = do
   keyword "define"
   name <- identifier
-  byRecurrence name <|> asSolutionOf name
+  byRecurrence name <|> asSolutionOf name <|> byFormula name
   where
     byRecurrence name = do
       keyword "by"
@@ -472,6 +472,10 @@ defineCommand = do
       specificName name
       _ <- symbol "="
       DefineByEquation name <$> equationExpr name
+
+    byFormula name = do
+      _ <- symbol "="
+      DefineByFormula name <$> seriesExpr
  
 -- @coeffs EXPR N@
 --
