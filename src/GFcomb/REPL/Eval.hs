@@ -22,7 +22,8 @@ module GFComb.REPL.Eval
      -- * Running commands
     Response (..),
     evalCommand,
-    describeDefinition
+    describeDefinition,
+    showSeriesExpr
   )
 where
 
@@ -33,7 +34,8 @@ import GFComb.AlgebraicGF
     showAlgebraicClosedForm,
     showExpr,
     solveEquation,
-    isGuardedEquation
+    isGuardedEquation,
+    asLagrangeForm
   )
 import GFComb.Builtins
   ( allBuiltins,
@@ -87,14 +89,20 @@ data Definition = Definition
 
 -- | How a definition came to exist.
 --
--- The three cases correspond to the three ways a series can enter the
--- environment: the two @define@ forms, and the built-ins that are present
--- from the start.
+-- The four cases correspond to the ways a series can enter the
+-- environment: the three @define@ forms, and the built-ins that are
+-- present from the start.
 data Origin
   = -- | @define fib by recurrence: ...@
     FromRecurrence LinearRecurrence
   | -- | @define C as solution of: ...@
     FromEquation Expr
+  | -- | @define S = x^2/(1 - x)@
+    --
+    -- The first expression is what was typed and the second is what it was
+    -- solved to. They differ only when the definition refers to itself:
+    -- @S = 1 + A*S@ is stored as typed, and solved to @S = A/(1 - A)@.
+    FromFormula SeriesExpr SeriesExpr
   | -- | One of "GFComb.Builtins"' entries, carrying its symbolic form and
     -- its description.
     FromBuiltin String String
@@ -208,17 +216,12 @@ data Response
 
 -- | The lines describing one definition, as shown by @show@ and echoed
 -- when it is first defined.
---
--- Built-ins carry their symbolic form directly. A recurrence can always
--- produce a rational generating function, and often a closed form too. An
--- equation can always produce coefficients, but only yields a symbolic
--- generating function when it is quadratic in the unknown.
 describeDefinition :: Definition -> [String]
 describeDefinition definition =
   case definitionOrigin definition of
     FromBuiltin symbolicForm description ->
       [ description,
-        "Generating function: " ++ symbolicForm
+        "Generating function closed form: " ++ symbolicForm
       ]
     FromRecurrence recurrence ->
       -- 'showClosedForm' already renders both cases, but its "No closed form
@@ -230,7 +233,7 @@ describeDefinition definition =
             case recurrenceClosedForm recurrence of
               NoClosedForm reason -> "Closed form: not available -- " ++ reason
               result -> "Closed form: " ++ showClosedForm result
-       in [ "Generating function: " ++ show (recurrenceRationalGF recurrence),
+       in [ "Generating function closed form: " ++ show (recurrenceRationalGF recurrence),
             closedFormLine
           ]
     FromEquation equation ->
@@ -241,14 +244,184 @@ describeDefinition definition =
           constantTerm = gfConstantTerm (definitionSeries definition)
           generatingFunctionLine =
             case showAlgebraicClosedForm equation constantTerm of
-              Right rendered -> "Generating function: " ++ rendered
+              Right rendered -> "Generating function closed form: " ++ rendered
               Left reason ->
-                "Generating function: no closed form available -- "
+                "Generating function closed form: not available -- "
                   ++ reason
                   ++ " (coefficients can still be computed)"
+          -- An equation of the form Y = c + x*phi(Y) admits Lagrange
+          -- inversion, which gives the n-th coefficient on its own without
+          -- computing any of the earlier ones. Worth saying so: it is a
+          -- genuinely different route to the same numbers.
+          lagrangeLine =
+            case asLagrangeForm equation of
+              Nothing -> []
+              Just (constant, phi) ->
+                [ "Lagrange form: "
+                    ++ name
+                    ++ " = "
+                    ++ showRationalPlainly constant
+                    ++ " + x*phi, with phi = "
+                    ++ showExpr name phi
+                ]
        in [ "Defined by: " ++ name ++ " = " ++ showExpr name equation,
             generatingFunctionLine
           ]
+            ++ lagrangeLine
+    FromFormula typed solved ->
+      -- A formula is its own closed form, so there is nothing to add when
+      -- the two agree; they differ only when the definition referred to
+      -- itself and was solved for.
+      let solvedLine = "Generating function closed form: " ++ showSeriesExpr solved
+       in if typed == solved
+            then [solvedLine]
+            else
+              [ "Defined by: " ++ definitionName definition ++ " = " ++ showSeriesExpr typed,
+                solvedLine
+              ]
+
+
+-- | Render a 'SeriesExpr' as source text, with parentheses only where
+-- precedence requires them.
+showSeriesExpr :: SeriesExpr -> String
+showSeriesExpr = render (0 :: Int)
+  where
+    -- The precedence argument is the binding strength of the context the
+    -- expression sits in, exactly as in 'GFComb.AlgebraicGF.showExpr': 1
+    -- for the operands of + and -, 2 for * and /, 3 for what follows them,
+    -- 4 for the base of a power.
+    render precedence expression =
+      case expression of
+        SeriesName name -> name
+        SeriesX -> "x"
+        SeriesLit value ->
+          parenthesiseIf
+            (precedence >= 3 && (value < 0 || denominator value /= 1))
+            (showRationalPlainly value)
+        SeriesAdd left right ->
+          parenthesiseIf (precedence > 1) (render 1 left ++ " + " ++ render 2 right)
+        SeriesSub left right ->
+          parenthesiseIf (precedence > 1) (render 1 left ++ " - " ++ render 2 right)
+        SeriesMul left right ->
+          parenthesiseIf (precedence > 2) (render 2 left ++ "*" ++ render 3 right)
+        SeriesDiv left right ->
+          parenthesiseIf (precedence > 2) (render 2 left ++ "/" ++ render 3 right)
+        SeriesPow base power ->
+          parenthesiseIf (precedence > 3) (render 4 base ++ "^" ++ show power)
+ 
+    parenthesiseIf condition text
+      | condition = "(" ++ text ++ ")"
+      | otherwise = text
+ 
+-- Does an expression refer to the given name anywhere?
+mentionsName :: String -> SeriesExpr -> Bool
+mentionsName name = go
+  where
+    go expression =
+      case expression of
+        SeriesName other -> other == name
+        SeriesLit _ -> False
+        SeriesX -> False
+        SeriesAdd left right -> go left || go right
+        SeriesSub left right -> go left || go right
+        SeriesMul left right -> go left || go right
+        SeriesDiv left right -> go left || go right
+        SeriesPow base _ -> go base
+ 
+-- | Split an expression into the pair @(A, B)@ for which it equals
+-- @A + B*name@, or 'Nothing' if it is not linear in that name.
+--
+-- This is what lets a definition refer to itself. @S = 1 + A*S@ has no
+-- need of a fixed point: rearranged, it is @S*(1 - A) = 1@, and so
+-- @S = 1/(1 - A)@ -- ordinary series arithmetic, with the unknown gone.
+-- That covers the sequence construction, @Seq(A) = 1/(1 - A)@, which is
+-- how a great many combinatorial classes are specified.
+--
+-- Anything of higher degree in the name is refused, since rearranging no
+-- longer removes the unknown. Those belong to @define ... as solution
+-- of:@, which solves by guarded self-reference instead.
+asLinearInName :: String -> SeriesExpr -> Maybe (SeriesExpr, SeriesExpr)
+asLinearInName name = go
+  where
+    -- A subexpression that does not mention the name at all contributes
+    -- only to A, whatever its shape. Checking that first keeps every case
+    -- below dealing with an expression that genuinely involves the name.
+    go expression
+      | not (mentionsName name expression) = Just (expression, SeriesLit 0)
+      | otherwise =
+          case expression of
+            -- Reachable only for the name itself: any other name would
+            -- have been handled above.
+            SeriesName _ -> Just (SeriesLit 0, SeriesLit 1)
+            SeriesAdd left right -> combine SeriesAdd left right
+            SeriesSub left right -> combine SeriesSub left right
+            SeriesMul left right
+              | not (mentionsName name left) -> do
+                  (rightConstant, rightMultiplier) <- go right
+                  Just (SeriesMul left rightConstant, SeriesMul left rightMultiplier)
+              | not (mentionsName name right) -> do
+                  (leftConstant, leftMultiplier) <- go left
+                  Just (SeriesMul leftConstant right, SeriesMul leftMultiplier right)
+              -- Both sides involve the name, so the product is quadratic
+              -- in it at best.
+              | otherwise -> Nothing
+            SeriesDiv numeratorExpr denominatorExpr
+              -- Dividing by something containing the name is not linear in
+              -- it, and rearranging would not remove it.
+              | mentionsName name denominatorExpr -> Nothing
+              | otherwise -> do
+                  (numeratorConstant, numeratorMultiplier) <- go numeratorExpr
+                  Just
+                    ( SeriesDiv numeratorConstant denominatorExpr,
+                      SeriesDiv numeratorMultiplier denominatorExpr
+                    )
+            SeriesPow base power
+              | power == 0 -> Just (SeriesLit 1, SeriesLit 0)
+              | power == 1 -> go base
+              | otherwise -> Nothing
+            -- Literals and x cannot mention the name, so they were handled
+            -- by the guard above.
+            _ -> Nothing
+ 
+    combine constructor left right = do
+      (leftConstant, leftMultiplier) <- go left
+      (rightConstant, rightMultiplier) <- go right
+      Just (constructor leftConstant rightConstant, constructor leftMultiplier rightMultiplier)
+
+
+-- Tidy an expression built by 'asLinearInName', which threads literal
+-- zeros and ones through every subexpression according to whether it
+-- involved the name. They are harmless to evaluate but make the rendered
+-- result unreadable.
+simplifySeriesExpr :: SeriesExpr -> SeriesExpr
+simplifySeriesExpr expression =
+  case expression of
+    SeriesAdd left right -> combineAdd (simplifySeriesExpr left) (simplifySeriesExpr right)
+    SeriesSub left right -> combineSub (simplifySeriesExpr left) (simplifySeriesExpr right)
+    SeriesMul left right -> combineMul (simplifySeriesExpr left) (simplifySeriesExpr right)
+    SeriesDiv left right -> combineDiv (simplifySeriesExpr left) (simplifySeriesExpr right)
+    SeriesPow base power -> combinePow (simplifySeriesExpr base) power
+    _ -> expression
+  where
+    combineAdd (SeriesLit 0) right = right
+    combineAdd left (SeriesLit 0) = left
+    combineAdd left right = SeriesAdd left right
+
+    combineSub left (SeriesLit 0) = left
+    combineSub left right = SeriesSub left right
+
+    combineMul (SeriesLit 0) _ = SeriesLit 0
+    combineMul _ (SeriesLit 0) = SeriesLit 0
+    combineMul (SeriesLit 1) right = right
+    combineMul left (SeriesLit 1) = left
+    combineMul left right = SeriesMul left right
+
+    combineDiv left (SeriesLit 1) = left
+    combineDiv left right = SeriesDiv left right
+
+    combinePow _ 0 = SeriesLit 1
+    combinePow base 1 = base
+    combinePow base power = SeriesPow base power
 
 -- The first few coefficients of a definition, as a line of output.
 --
@@ -284,6 +457,7 @@ listing env =
       case origin of
         FromRecurrence _ -> "recurrence"
         FromEquation _ -> "equation"
+        FromFormula _ _ -> "formula"
         FromBuiltin _ _ -> "built-in"
 
 ----------------------------------------
@@ -324,6 +498,26 @@ evalCommand env cmd =
                 definitionOrigin = FromEquation equation,
                 definitionSeries = solveEquation equation
               }
+    DefineByFormula name expression ->
+      case asLinearInName name expression of
+        Nothing -> (Output (nonLinearMessage name), env)
+        Just (constantPart, multiplierPart) ->
+          -- Solving A + B*name for the name gives A / (1 - B). When the
+          -- definition does not mention itself B is 0, and this is just A.
+          let solved
+                | mentionsName name expression =
+                    simplifySeriesExpr
+                      (SeriesDiv constantPart (SeriesSub (SeriesLit 1) multiplierPart))
+                | otherwise = expression
+           in case evalSeriesExpr env solved of
+                Left problem -> (Output [problem], env)
+                Right series ->
+                  defined
+                    Definition
+                      { definitionName = name,
+                        definitionOrigin = FromFormula expression solved,
+                        definitionSeries = series
+                      }
     Coeffs expression count ->
       (Output (withSeries expression (\series -> [showRationalList (gfTake count series)])), env)
     CoeffAt expression index ->
@@ -358,12 +552,22 @@ evalCommand env cmd =
         "but '" ++ name ++ " = 1 + " ++ name ++ "^2' does not."
       ]
 
+    nonLinearMessage name =
+      [ "'" ++ name ++ "' cannot be defined this way.",
+        "A formula may refer to the name being defined, but only linearly --",
+        "as in '" ++ name ++ " = 1 + A*" ++ name ++ "', which is solved as",
+        "'" ++ name ++ " = A/(1 - A)' without any unknown left in it.",
+        "For an equation of higher degree, use:",
+        "  define " ++ name ++ " as solution of: " ++ name ++ " = 1 + x*" ++ name ++ "^2"
+      ]
+
 -- The text shown by @help@.
 helpLines :: [String]
 helpLines =
   [ "Commands:",
     "  define NAME by recurrence: a(n) = a(n-1) + a(n-2), a(0)=1, a(1)=1",
     "  define NAME as solution of: NAME = 1 + x*NAME^2",
+    "  define NAME = x^2/(1 - x)",
     "  coeffs EXPR N   the first N coefficients of EXPR",
     "  coeff EXPR N    the coefficient of x^N in EXPR",
     "  add A B         the first 10 coefficients of A + B",
@@ -389,6 +593,16 @@ helpLines =
     "With no reference to an earlier term it is simply a formula, and takes",
     "no initial values, since every value is already determined:",
     "  define squares by recurrence: a(n) = n^2",
+    "",
+    "The third form names a generating function outright, and may refer to",
+    "names already defined:",
+    "  define sums = x^2/(1 - x)",
+    "  define pay = 1/((1 - x)*(1 - x^2)*(1 - x^5))",
+    "",
+    "Such a formula may also refer to the name being defined, provided it",
+    "does so linearly -- the sequence construction, solved as 1/(1 - A):",
+    "  define seq = 1 + sums*seq",
+    "For anything of higher degree in the name, use 'as solution of:'.",
     "",
     "Multiplication must be written explicitly: x*C^2, not xC^2.",
     "",
