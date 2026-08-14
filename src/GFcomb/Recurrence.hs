@@ -346,7 +346,7 @@ recurrenceTermAt index recurrence = gfCoeffAtMaybe (recurrenceGF recurrence) ind
 -- gives the Gaussian rationals); the arithmetic below is independent of the sign of d.
 --
 -- Used to represent roots of the characteristic polynomial and their
--- partial-fraction coefficients exactly, for recurrences whose
+-- closed-form coefficients exactly, for recurrences whose
 -- characteristic polynomial factors into rational roots plus at most one
 -- irreducible quadratic factor (e.g. Fibonacci's golden-ratio pair).
 --
