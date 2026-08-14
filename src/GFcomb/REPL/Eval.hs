@@ -69,6 +69,7 @@ import GFComb.Recurrence
   )
 import Data.List (intercalate)
 import Data.Ratio (denominator, numerator)
+import Data.Char (isDigit)
 
 ------------------------------
 -- Definitions
@@ -305,13 +306,33 @@ showSeriesExpr = render (0 :: Int)
         SeriesMul left right ->
           parenthesiseIf (precedence > 2) (render 2 left ++ "*" ++ render 3 right)
         SeriesDiv left right ->
-          parenthesiseIf (precedence > 2) (render 2 left ++ "/" ++ render 3 right)
+          let leftText = render 2 left
+              rightText = render 3 right
+              -- A number immediately followed by / and another number is
+              -- lexed as a single rational literal, so "1/2" would read
+              -- back as one value rather than a division. Parenthesising
+              -- the left operand keeps the two apart.
+              rendered
+                | isLiteral left && startsWithDigit rightText =
+                    "(" ++ leftText ++ ")/" ++ rightText
+                | otherwise = leftText ++ "/" ++ rightText
+           in parenthesiseIf (precedence > 2) rendered
         SeriesPow base power ->
           parenthesiseIf (precedence > 3) (render 4 base ++ "^" ++ show power)
  
     parenthesiseIf condition text
       | condition = "(" ++ text ++ ")"
       | otherwise = text
+
+    isLiteral expression =
+        case expression of
+          SeriesLit _ -> True
+          _ -> False
+
+    startsWithDigit text =
+      case text of
+        first : _ -> isDigit first
+        [] -> False
  
 -- Does an expression refer to the given name anywhere?
 mentionsName :: String -> SeriesExpr -> Bool
