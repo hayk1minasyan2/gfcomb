@@ -26,6 +26,7 @@ import GFComb.REPL.Eval
     envNames,
     evalCommand,
     evalSeriesExpr,
+    showSeriesExpr,
     initialEnv
   )
 import GFComb.REPL.Parser
@@ -40,6 +41,7 @@ import Test.QuickCheck
     NonNegative (..),
     Property,
     choose,
+    elements,
     forAll,
     listOf,
     oneof,
@@ -124,7 +126,10 @@ main =
             testEvalRejectsUnguardedEquation,
             testEvalDefinitionsAccumulate,
             testEvalControlCommands,
-            testEvalEnvironment
+            testEvalEnvironment,
+            testEvalDefineByFormula,
+            testEvalDefineByFormulaSelfReference,
+            testEvalDefineByFormulaRefusesNonLinear
           ],
         testGroup
           "Property-based tests (QuickCheck)"
@@ -139,7 +144,8 @@ main =
             testPolynomialMulAssociative,
             testPolynomialEvaluateDistributesOverAdd,
             testOrder1ClosedFormMatchesTerm,
-            testShowExprRoundTrips
+            testShowExprRoundTrips,
+            testShowSeriesExprRoundTrips
           ],
         testGroup
           "Inhomogeneous recurrences"
@@ -1404,6 +1410,70 @@ testEvalEnvironment = testCase "the session starts with the built-ins defined" $
   (missing, _) <- runReplLine initialEnv "show nosuchname"
   assertMentioned "show reports an unknown name" "is not defined" missing
 
+---------------------------------------
+-- REPL: defining by an explicit formula
+----------------------------------------
+ 
+testEvalDefineByFormula :: TestTree
+testEvalDefineByFormula = testCase "defining by a formula" $ do
+  (_, afterFirst) <- runReplLine initialEnv "define geom = 1/(1 - x)"
+ 
+  case envLookup "geom" afterFirst of
+    Nothing -> assertFailure "'geom' should be defined afterwards"
+    Just definition ->
+      assertEqual
+        "1/(1 - x) is the all-ones series"
+        [1, 1, 1, 1, 1, 1]
+        (gfTake 6 (definitionSeries definition))
+ 
+  -- A formula may name anything already defined, which is the point of
+  -- being able to name one at all.
+  (_, afterSecond) <- runReplLine afterFirst "define geom_squared = geom*geom"
+ 
+  case envLookup "geom_squared" afterSecond of
+    Nothing -> assertFailure "'geom_squared' should be defined afterwards"
+    Just definition ->
+      assertEqual
+        "squaring it gives the positive integers"
+        [1, 2, 3, 4, 5, 6]
+        (gfTake 6 (definitionSeries definition))
+ 
+  (listOutput, _) <- runReplLine afterSecond "list"
+  assertMentioned "a formula definition is tagged as such" "(formula)" listOutput
+ 
+-- A definition that refers to itself linearly needs no fixed point: it is
+-- rearranged and solved. This is the sequence construction, and the
+-- sequence it produces here is the one the course notes derive by hand as
+-- (1 - x)/(1 - x - x^2).
+testEvalDefineByFormulaSelfReference :: TestTree
+testEvalDefineByFormulaSelfReference = testCase "a formula referring to itself linearly" $ do
+  (_, afterFirst) <- runReplLine initialEnv "define sums1 = x^2/(1 - x)"
+  (output, env) <- runReplLine afterFirst "define sums = 1 + sums1*sums"
+ 
+  assertMentioned "the solved form is shown, not the one typed" "1/(1 - sums1)" output
+ 
+  case envLookup "sums" env of
+    Nothing -> assertFailure "'sums' should be defined afterwards"
+    Just definition ->
+      assertEqual
+        "ordered sums of integers greater than one"
+        [1, 0, 1, 1, 2, 3, 5, 8, 13, 21]
+        (gfTake 10 (definitionSeries definition))
+ 
+-- The same equation written with the name on both sides of a product is
+-- quadratic in it, so rearranging would not remove the unknown.
+testEvalDefineByFormulaRefusesNonLinear :: TestTree
+testEvalDefineByFormulaRefusesNonLinear = testCase "a non-linear self-reference is refused" $ do
+  (output, env) <- runReplLine initialEnv "define bad = 1 + x*bad^2"
+ 
+  assertMentioned "the refusal states the rule" "only linearly" output
+  assertMentioned "and points at the form that does handle it" "as solution of" output
+ 
+  assertEqual
+    "nothing is defined by a refused definition"
+    Nothing
+    (fmap definitionName (envLookup "bad" env))
+ 
 ----------------------------------------
 -- REPL: parser and printer agree
 ----------------------------------------
@@ -1443,6 +1513,55 @@ prop_showExprRoundTrips =
 testShowExprRoundTrips :: TestTree
 testShowExprRoundTrips =
   testProperty "showExpr and the equation parser agree" prop_showExprRoundTrips
+
+
+-- Generate a query expression of bounded depth.
+--
+-- Literals are kept non-negative for the same reason as in
+-- 'genExprOfDepth': the parser reads @-3@ as a prefix minus applied to
+-- @3@, so an expression it produces never contains a negative literal.
+-- The names are ones the lexer accepts.
+genSeriesExprOfDepth :: Int -> Gen SeriesExpr
+genSeriesExprOfDepth depth
+  | depth <= 0 = oneof atoms
+  | otherwise =
+      oneof
+        ( atoms
+            ++ [ SeriesAdd <$> smaller <*> smaller,
+                 SeriesSub <$> smaller <*> smaller,
+                 SeriesMul <$> smaller <*> smaller,
+                 SeriesDiv <$> smaller <*> smaller,
+                 SeriesPow <$> smaller <*> (fromIntegral <$> choose (0 :: Int, 4))
+               ]
+        )
+  where
+    smaller = genSeriesExprOfDepth (depth - 1)
+    atoms =
+      [ pure SeriesX,
+        SeriesLit . abs <$> genRational,
+        SeriesName <$> elements ["a", "b", "fib", "catalan", "t_1"]
+      ]
+ 
+-- Printing a query expression and parsing it back returns the same
+-- expression.
+--
+-- This is the counterpart of 'prop_showExprRoundTrips' for the other
+-- expression language, and it checks 'showSeriesExpr' and 'seriesExpr'
+-- against each other: the two would have to make exactly the same mistake
+-- about precedence or associativity to agree wrongly.
+--
+-- Division is the interesting case here, because printing it naively can
+-- produce text that no longer means what it did: "1/2" is lexed as a
+-- single rational literal rather than as a division.
+prop_showSeriesExprRoundTrips :: Property
+prop_showSeriesExprRoundTrips =
+  forAll (genSeriesExprOfDepth 3) $ \expression ->
+    parseSeriesExpr (showSeriesExpr expression) === Right expression
+ 
+testShowSeriesExprRoundTrips :: TestTree
+testShowSeriesExprRoundTrips =
+  testProperty "showSeriesExpr and the query parser agree" prop_showSeriesExprRoundTrips
+
 
 ----------------------------------------
 -- Inhomogeneous recurrences
