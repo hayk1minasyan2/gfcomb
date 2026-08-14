@@ -140,7 +140,7 @@ polynomialVariable = Polynomial [0, 1]
 polynomialCoefficients :: Polynomial -> [Rational]
 polynomialCoefficients (Polynomial coefficients) = coefficients
 
--- | The coefficient of degree 'index' in a polynomial, or 0 beyond its
+-- | The coefficient of degree @index@ in a polynomial, or 0 beyond its
 -- degree (similar to how a GF behaves, since Polynomial's own coefficient
 -- list is normalized to drop trailing zeros).
 polynomialCoefficientAt :: Polynomial -> Int -> Rational

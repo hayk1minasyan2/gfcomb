@@ -128,7 +128,7 @@ xPower _ = Nothing
 -- (Y = x*(1 + Y^2 + Y^3)), and so on.
 --
 -- An equation that is not guarded this way (for example Y = Y + 1, where
--- Y appears with no x anywhere) will not terminate: producing 'rhs'
+-- Y appears with no x anywhere) will not terminate: producing @rhs@
 -- from an already-guarded combinatorial specification is the caller's
 -- responsibility.
 --
@@ -216,7 +216,7 @@ expandedTerms (Mul a b) =
   ]
 expandedTerms term = [(True, term)]
 
--- For a single multiplicative term (as produced by 'expandedTerms', so it
+-- For a single multiplicative term (as produced by @expandedTerms@, so it
 -- contains no Add/Sub), count how many factors of x it has and return
 -- what's left after removing them all. e.g. for x*Y^2 this is
 -- (1, Y^2), and for a term with no x at all it's (0, the term
@@ -288,7 +288,7 @@ lagrangeCoefficient c phi n =
   where
     psi = evalExprAsPolynomial phi (polynomialAdd polynomialVariable (polynomialFromList [c]))
 
--- | The first 'count' coefficients (n = 0, 1, ..., count - 1) of the
+-- | The first @count@ coefficients (n = 0, 1, ..., count - 1) of the
 -- solution to Y = c + x*phi(Y), via 'lagrangeCoefficient'.
 --
 -- >>> lagrangeCoefficients 1 (Pow Y 2) 5
@@ -330,7 +330,7 @@ containsY (Pow a _) = containsY a
 --
 -- Like 'asLagrangeForm', this works by fully expanding rhs into signed
 -- multiplicative terms (distributing Mul over Add\/Sub via
--- 'expandedTerms') and classifying each term by its degree in Y (0, 1,
+-- @expandedTerms@) and classifying each term by its degree in Y (0, 1,
 -- or 2); a degree outside {0, 1, 2} means the equation isn't quadratic in
 -- Y and this returns 'Nothing' (this is out of the scope of the project.
 -- A quadratic equation always has a closed radical solution (the quadratic formula)
@@ -380,8 +380,8 @@ yDegreeAndRemainder (Mul a b) = do
   (degreeA, remainderA) <- yDegreeAndRemainder a
   (degreeB, remainderB) <- yDegreeAndRemainder b
   Just (degreeA + degreeB, Mul remainderA remainderB)
-yDegreeAndRemainder (Add _ _) = Nothing -- this is already handled by 'expandedTerms', and shouldn't occurre
-yDegreeAndRemainder (Sub _ _) = Nothing -- this is already handled by 'expandedTerms', and shouldn't occurre
+yDegreeAndRemainder (Add _ _) = Nothing -- this is already handled by @expandedTerms@, and shouldn't occurre
+yDegreeAndRemainder (Sub _ _) = Nothing -- this is already handled by @expandedTerms@, and shouldn't occurre
  
 -- | Solve a(x)*Y^2 + b(x)*Y + c(x) = 0 for Y as a formal power series, via
 -- the quadratic formula
@@ -630,7 +630,7 @@ showAlgebraicClosedForm rhs expectedConstantTerm =
 -- matters as soon as the equation comes from a person typing rather than
 -- from code.
 --
--- The check reuses 'expandedTerms', so an x factored out over a whole sum
+-- The check reuses @expandedTerms@, so an x factored out over a whole sum
 -- counts just as well as one written against each term: both
 -- @x*(1 + Y^2)@ and @x + x*Y^2@ are recognised as guarded.
 --
