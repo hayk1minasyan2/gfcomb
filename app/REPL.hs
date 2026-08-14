@@ -67,9 +67,15 @@ runLine origin env line =
     case parseCommandLine line of
       Left problem -> do
         outputStr (label ++ problem)
+        outputStrLn ""
         pure (True, env)
+      -- A line with no command on it produces no output, so it needs no
+      -- separator either.
       Right Nothing -> pure (True, env)
-      Right (Just parsedCommand) -> runCommand env parsedCommand
+      Right (Just parsedCommand) -> do
+        outcome <- runCommand env parsedCommand
+        outputStrLn ""
+        pure outcome
   where
     label = maybe "" (++ "\n") origin
     interrupted = do
